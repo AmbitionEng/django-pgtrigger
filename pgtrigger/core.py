@@ -786,7 +786,7 @@ class Trigger:
                 ignore_func_name=_ignore_func_name(),
                 pgid=self.get_pgid(model),
                 declare=self.render_declare(model),
-                func=self.render_func(model),
+                func=re.sub(r"\s+", " ", self.render_func(model)).strip(),
                 table=model._meta.db_table,
                 constraint="CONSTRAINT" if self.timing else "",
                 when=self.when,
