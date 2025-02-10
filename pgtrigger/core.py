@@ -536,7 +536,7 @@ def _cleanup_on_exit(cleanup):
     cleanup()
 
 
-def _ignore_func_name():
+def _ignore_func_name() -> str:
     ignore_func = "_pgtrigger_should_ignore"
     if features.schema():  # pragma: no branch
         ignore_func = f"{utils.quote(features.schema())}.{ignore_func}"
