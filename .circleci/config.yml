@@ -19,7 +19,7 @@ orbs:
         parameters:
           pg_version:
             type: "string"
-            default: "14.4"
+            default: "14.17"
     commands:
       test:
         steps:
@@ -39,14 +39,14 @@ jobs:
   test_pg_min:
     executor:
       name: ambitioneng/python
-      pg_version: "13.16"
+      pg_version: "14.17"
     steps:
       - ambitioneng/test
 
   test_pg_max:
     executor:
       name: ambitioneng/python
-      pg_version: "17.0"
+      pg_version: "17.4"
     steps:
       - ambitioneng/test
 
