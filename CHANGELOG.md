@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.14.0 (2025-04-18)
+
+#### Changes
+
+  - Support better type annotations for the compiler and migrations module by [@cjwatson](https://github.com/cjwatson) in [#200](https://github.com/AmbitionEng/django-pgtrigger/pull/200).
+  - Support Django 5.2, drop Postgres 13 support by [@wesleykendall](https://github.com/wesleykendall) in [#203](https://github.com/AmbitionEng/django-pgtrigger/pull/203).
+
 ## 4.13.3 (2024-12-15)
 
 #### Changes

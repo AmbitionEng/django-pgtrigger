@@ -77,8 +77,7 @@ class Referencing:
     def __init__(self, *, old=None, new=None):
         if not old and not new:
             raise ValueError(
-                'Must provide either "old" and/or "new" to the referencing'
-                " construct of a trigger"
+                'Must provide either "old" and/or "new" to the referencing construct of a trigger'
             )
 
         self.old = old

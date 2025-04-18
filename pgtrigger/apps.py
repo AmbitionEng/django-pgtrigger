@@ -43,6 +43,10 @@ def patch_migrations():
                 {},
             )
 
+        if django.VERSION >= (5, 2):
+            makemigrations.Command.autodetector = makemigrations.MigrationAutodetector
+            migrate.Command.autodetector = makemigrations.MigrationAutodetector
+
 
 def patch_schema_editor():
     """

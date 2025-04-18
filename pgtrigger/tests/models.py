@@ -1,3 +1,4 @@
+import django
 from django.contrib.auth.models import User
 from django.contrib.postgres.search import SearchVectorField
 from django.db import connections, models
@@ -219,6 +220,21 @@ class FkToSoftDelete(models.Model):
     """Ensures foreign keys to a soft delete model are deleted"""
 
     ref = models.ForeignKey(SoftDelete, on_delete=models.CASCADE)
+
+
+if django.VERSION >= (5, 2):
+
+    @pgtrigger.register(pgtrigger.SoftDelete(name="soft_delete_composite_pk", field="is_active"))
+    class SoftDeleteCompositePk(models.Model):
+        """
+        For testing soft deletion with a composite primary key.
+        """
+
+        id_1 = models.IntegerField()
+        id_2 = models.IntegerField()
+        pk = models.CompositePrimaryKey("id_1", "id_2")
+        is_active = models.BooleanField(default=True)
+        other_field = models.TextField()
 
 
 @pgtrigger.register(pgtrigger.SoftDelete(name="soft_delete", field="custom_active"))

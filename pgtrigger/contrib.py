@@ -5,10 +5,34 @@ import itertools
 import operator
 from typing import Any, List, Tuple, Union
 
+from django.db import models
+
 from pgtrigger import core, utils
 
 # A sentinel value to determine if a kwarg is unset
 _unset = object()
+
+
+def _get_column(model, field):
+    field = field if isinstance(field, models.Field) else model._meta.get_field(field)
+    col = field.column
+    if not col:  # pragma: no cover
+        if getattr(field, "columns", None):
+            raise ValueError(
+                f"Field {field.name} references a composite key and is not supported."
+            )
+        else:
+            raise ValueError(f"Field {field.name} does not reference a database column.")
+    return col
+
+
+def _get_columns(model, field):
+    field = field if isinstance(field, models.Field) else model._meta.get_field(field)
+    col = field.column
+    cols = [col] if col else getattr(field, "columns", None)
+    if not cols:  # pragma: no cover
+        raise ValueError(f"Field {field.name} does not reference a database column.")
+    return cols
 
 
 class Protect(core.Trigger):
@@ -133,7 +157,7 @@ class FSM(core.Trigger):
         return [("_is_valid_transition", "BOOLEAN")]
 
     def get_func(self, model):
-        col = model._meta.get_field(self.field).column
+        col = _get_column(model, self.field)
         transition_uris = (
             "{" + ",".join([f"{old}{self.separator}{new}" for old, new in self.transitions]) + "}"
         )
@@ -190,8 +214,16 @@ class SoftDelete(core.Trigger):
         super().__init__(name=name, condition=condition)
 
     def get_func(self, model):
-        soft_field = model._meta.get_field(self.field).column
-        pk_col = model._meta.pk.column
+        soft_field = _get_column(model, self.field)
+
+        # Support composite primary keys in Django 5.2+
+        pk_cols = _get_columns(model, model._meta.pk)
+        table_pk_cols = ",".join(utils.quote(col) for col in pk_cols)
+        trigger_pk_cols = ",".join(f"OLD.{utils.quote(col)}" for col in pk_cols)
+
+        if len(pk_cols) > 1:
+            table_pk_cols = f"({table_pk_cols})"
+            trigger_pk_cols = f"({trigger_pk_cols})"
 
         def _render_value():
             if self.value is None:
@@ -204,7 +236,7 @@ class SoftDelete(core.Trigger):
         sql = f"""
             UPDATE {utils.quote(model._meta.db_table)}
             SET {soft_field} = {_render_value()}
-            WHERE {utils.quote(pk_col)} = OLD.{utils.quote(pk_col)};
+            WHERE {table_pk_cols} = {trigger_pk_cols};
             RETURN NULL;
         """
         return self.format_sql(sql)
@@ -263,9 +295,9 @@ class UpdateSearchVector(core.Trigger):
         return ""
 
     def render_execute(self, model):
-        document_cols = [model._meta.get_field(field).column for field in self.document_fields]
+        document_cols = [_get_column(model, field) for field in self.document_fields]
         rendered_document_cols = ", ".join(utils.quote(col) for col in document_cols)
-        vector_col = model._meta.get_field(self.vector_field).column
+        vector_col = _get_column(model, self.vector_field)
         return (
             f"tsvector_update_trigger({utils.quote(vector_col)},"
             f" {utils.quote(self.config_name)}, {rendered_document_cols})"
