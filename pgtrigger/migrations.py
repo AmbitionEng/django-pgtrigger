@@ -1,13 +1,19 @@
 import contextlib
 import re
+from collections.abc import Sequence
+from typing import Any, Union
 
 from django import __version__ as DJANGO_VERSION
 from django.apps import apps
 from django.db import transaction
+from django.db.backends.base.schema import BaseDatabaseSchemaEditor
+from django.db.migrations.operations.base import Operation
 from django.db.migrations.operations.fields import AddField
 from django.db.migrations.operations.models import CreateModel, IndexOperation
+from django.db.migrations.state import ModelState, ProjectState
+from django.db.models import Model
 
-from pgtrigger import compiler, utils
+from pgtrigger import compiler, core, utils
 
 if DJANGO_VERSION >= "5.1":
     from django.db.migrations.autodetector import OperationDependency
@@ -18,7 +24,11 @@ else:
     OPERATION_DEPENDENCY_CREATE = True
 
 
-def _add_trigger(schema_editor, model, trigger):
+def _add_trigger(
+    schema_editor: BaseDatabaseSchemaEditor,
+    model: type[Model],
+    trigger: Union[core.Trigger, compiler.Trigger],
+) -> None:
     """Add a trigger to a model."""
     if not isinstance(trigger, compiler.Trigger):  # pragma: no cover
         trigger = trigger.compile(model)
@@ -29,7 +39,11 @@ def _add_trigger(schema_editor, model, trigger):
         schema_editor.execute(trigger.install_sql, params=None)
 
 
-def _remove_trigger(schema_editor, model, trigger):
+def _remove_trigger(
+    schema_editor: BaseDatabaseSchemaEditor,
+    model: type[Model],
+    trigger: Union[core.Trigger, compiler.Trigger],
+) -> None:
     """Remove a trigger from a model."""
     if not isinstance(trigger, compiler.Trigger):  # pragma: no cover
         trigger = trigger.compile(model)
@@ -40,10 +54,14 @@ def _remove_trigger(schema_editor, model, trigger):
 
 
 class TriggerOperationMixin:
-    def allow_migrate_model_trigger(self, schema_editor, model):
+    def allow_migrate_model_trigger(
+        self, schema_editor: BaseDatabaseSchemaEditor, model: type[Model]
+    ) -> bool:
         """
         The check for determinig if a trigger is migrated
         """
+        assert isinstance(self, Operation)
+        assert model._meta.concrete_model is not None
         return schema_editor.connection.vendor == "postgresql" and self.allow_migrate_model(
             schema_editor.connection.alias, model._meta.concrete_model
         )
@@ -52,29 +70,43 @@ class TriggerOperationMixin:
 class AddTrigger(TriggerOperationMixin, IndexOperation):
     option_name = "triggers"
 
-    def __init__(self, model_name, trigger):
+    def __init__(self, model_name: str, trigger: Union[core.Trigger, compiler.Trigger]) -> None:
         self.model_name = model_name
         self.trigger = trigger
 
-    def state_forwards(self, app_label, state):
+    def state_forwards(self, app_label: str, state: ProjectState) -> None:
         model_state = state.models[app_label, self.model_name]
         model_state.options["triggers"] = model_state.options.get("triggers", []) + [self.trigger]
         state.reload_model(app_label, self.model_name, delay=True)
 
-    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+    def database_forwards(
+        self,
+        app_label: str,
+        schema_editor: BaseDatabaseSchemaEditor,
+        from_state: ProjectState,
+        to_state: ProjectState,
+    ) -> None:
         model = to_state.apps.get_model(app_label, self.model_name)
+        assert issubclass(model, Model)
         if self.allow_migrate_model_trigger(schema_editor, model):  # pragma: no branch
             _add_trigger(schema_editor, model, self.trigger)
 
-    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+    def database_backwards(
+        self,
+        app_label: str,
+        schema_editor: BaseDatabaseSchemaEditor,
+        from_state: ProjectState,
+        to_state: ProjectState,
+    ) -> None:
         model = to_state.apps.get_model(app_label, self.model_name)
+        assert issubclass(model, Model)
         if self.allow_migrate_model_trigger(schema_editor, model):  # pragma: no branch
             _remove_trigger(schema_editor, model, self.trigger)
 
-    def describe(self):
+    def describe(self) -> str:
         return f"Create trigger {self.trigger.name} on model {self.model_name}"
 
-    def deconstruct(self):
+    def deconstruct(self) -> tuple[str, Sequence[Any], dict[str, Any]]:
         return (
             self.__class__.__name__,
             [],
@@ -85,12 +117,14 @@ class AddTrigger(TriggerOperationMixin, IndexOperation):
         )
 
     @property
-    def migration_name_fragment(self):
+    def migration_name_fragment(self) -> str:
+        assert self.trigger.name is not None
         return f"{self.model_name_lower}_{self.trigger.name.lower()}"
 
 
-def _get_trigger_by_name(model_state, name):
+def _get_trigger_by_name(model_state: ModelState, name: str) -> compiler.Trigger:
     for trigger in model_state.options.get("triggers", []):  # pragma: no branch
+        assert isinstance(trigger, compiler.Trigger)
         if trigger.name == name:
             return trigger
 
@@ -100,34 +134,48 @@ def _get_trigger_by_name(model_state, name):
 class RemoveTrigger(TriggerOperationMixin, IndexOperation):
     option_name = "triggers"
 
-    def __init__(self, model_name, name):
+    def __init__(self, model_name: str, name: str) -> None:
         self.model_name = model_name
         self.name = name
 
-    def state_forwards(self, app_label, state):
+    def state_forwards(self, app_label: str, state: ProjectState) -> None:
         model_state = state.models[app_label, self.model_name]
         objs = model_state.options.get("triggers", [])
         model_state.options["triggers"] = [obj for obj in objs if obj.name != self.name]
         state.reload_model(app_label, self.model_name, delay=True)
 
-    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+    def database_forwards(
+        self,
+        app_label: str,
+        schema_editor: BaseDatabaseSchemaEditor,
+        from_state: ProjectState,
+        to_state: ProjectState,
+    ) -> None:
         model = to_state.apps.get_model(app_label, self.model_name)
+        assert issubclass(model, Model)
         if self.allow_migrate_model_trigger(schema_editor, model):  # pragma: no branch
             from_model_state = from_state.models[app_label, self.model_name_lower]
             trigger = _get_trigger_by_name(from_model_state, self.name)
             _remove_trigger(schema_editor, model, trigger)
 
-    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+    def database_backwards(
+        self,
+        app_label: str,
+        schema_editor: BaseDatabaseSchemaEditor,
+        from_state: ProjectState,
+        to_state: ProjectState,
+    ) -> None:
         model = to_state.apps.get_model(app_label, self.model_name)
+        assert issubclass(model, Model)
         if self.allow_migrate_model_trigger(schema_editor, model):  # pragma: no branch
             to_model_state = to_state.models[app_label, self.model_name_lower]
             trigger = _get_trigger_by_name(to_model_state, self.name)
             _add_trigger(schema_editor, model, trigger)
 
-    def describe(self):
+    def describe(self) -> str:
         return f"Remove trigger {self.name} from model {self.model_name}"
 
-    def deconstruct(self):
+    def deconstruct(self) -> tuple[str, Sequence[Any], dict[str, Any]]:
         return (
             self.__class__.__name__,
             [],
@@ -138,7 +186,7 @@ class RemoveTrigger(TriggerOperationMixin, IndexOperation):
         )
 
     @property
-    def migration_name_fragment(self):
+    def migration_name_fragment(self) -> str:
         return f"remove_{self.model_name_lower}_{self.name.lower()}"
 
 
