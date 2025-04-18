@@ -169,6 +169,10 @@ def _inject_m2m_dependency_in_proxy(proxy_op):
 class MigrationAutodetectorMixin:
     """A mixin that can be subclassed with MigrationAutodetector and detects triggers"""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        print("USING MIGRATION AUTODETECTOR MIXING")
+
     def _detect_changes(self, *args, **kwargs):
         self.altered_triggers = {}
         return super()._detect_changes(*args, **kwargs)
@@ -331,6 +335,7 @@ class DatabaseSchemaEditorMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        print("USING EDITOR MIXING")
         self.temporarily_dropped_triggers = set()
         self.is_altering_field_type = False
 
