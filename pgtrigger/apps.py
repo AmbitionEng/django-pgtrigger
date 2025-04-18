@@ -3,13 +3,10 @@ import django.db.backends.postgresql.schema as postgresql_schema
 from django.conf import settings
 from django.core.management.commands import makemigrations, migrate
 from django.db.migrations import state
-from django.db.migrations.serializer import BaseSerializer
-from django.db.migrations.writer import MigrationWriter
 from django.db.models import options
 from django.db.models.signals import post_migrate
 from django.db.utils import load_backend
 
-import pgtrigger.core
 from pgtrigger import core, features, installation, migrations
 
 # Allow triggers to be specified in model Meta. Users can turn this
@@ -36,7 +33,6 @@ def patch_migrations():
                 (migrations.MigrationAutodetectorMixin, makemigrations.MigrationAutodetector),
                 {},
             )
-            # makemigrations.Command.autodetector = makemigrations.MigrationAutodetector
 
         if not issubclass(  # pragma: no branch
             migrate.MigrationAutodetector, migrations.MigrationAutodetectorMixin
@@ -94,14 +90,6 @@ def register_triggers_from_meta():
 def install_on_migrate(using, **kwargs):
     if features.install_on_migrate():
         installation.install(database=using)
-
-
-class TriggerSerializer(BaseSerializer):
-    def serialize(self):
-        return repr(self), {"import pgtrigger.compiler", "import pgtrigger.migrations"}
-
-
-MigrationWriter.register_serializer(pgtrigger.core.Trigger, TriggerSerializer)
 
 
 class PGTriggerConfig(django.apps.AppConfig):
