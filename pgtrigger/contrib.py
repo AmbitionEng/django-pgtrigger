@@ -221,6 +221,10 @@ class SoftDelete(core.Trigger):
         table_pk_cols = ",".join(utils.quote(col) for col in pk_cols)
         trigger_pk_cols = ",".join(f"OLD.{utils.quote(col)}" for col in pk_cols)
 
+        if len(pk_cols) > 1:
+            table_pk_cols = f"({table_pk_cols})"
+            trigger_pk_cols = f"({trigger_pk_cols})"
+
         def _render_value():
             if self.value is None:
                 return "NULL"
@@ -232,7 +236,7 @@ class SoftDelete(core.Trigger):
         sql = f"""
             UPDATE {utils.quote(model._meta.db_table)}
             SET {soft_field} = {_render_value()}
-            WHERE ({table_pk_cols}) = ({trigger_pk_cols});
+            WHERE {table_pk_cols} = {trigger_pk_cols};
             RETURN NULL;
         """
         return self.format_sql(sql)
