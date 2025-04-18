@@ -1,4 +1,5 @@
 import ddf
+import django
 import pytest
 from django.core.exceptions import FieldDoesNotExist
 
@@ -110,6 +111,20 @@ def test_soft_delete():
 
     assert not models.SoftDelete.objects.get().is_active
     assert not models.FkToSoftDelete.objects.exists()
+
+
+@pytest.mark.django_db
+def test_soft_delete_composite_pk():
+    """
+    Verifies the SoftDelete test model has the "is_active" flag set to false
+    """
+    if django.VERSION >= (5, 2):
+        models.SoftDeleteCompositePk.objects.create(is_active=True, id_1=1, id_2=1)
+        soft_delete = models.SoftDeleteCompositePk.objects.create(is_active=True, id_1=2, id_2=2)
+        soft_delete.delete()
+
+        assert models.SoftDeleteCompositePk.objects.get(id_1=1, id_2=1).is_active
+        assert not models.SoftDeleteCompositePk.objects.get(id_1=2, id_2=2).is_active
 
 
 @pytest.mark.django_db
