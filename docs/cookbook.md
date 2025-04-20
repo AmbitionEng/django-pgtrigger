@@ -335,15 +335,62 @@ class DocumentModel(models.Model):
 
     [pgtrigger.UpdateSearchVector][] triggers are incompatible with [pgtrigger.ignore][] and will raise a `RuntimeError` if used.
 
+## Ensuring child models exist
+
+Consider a `Profile` model that has a `OneToOne` to Django's `User` model:
+
+```python
+class Profile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+```
+
+We use a "deferrable" trigger to ensure a `Profile` exists for every `User`. Deferrable triggers can execute at the end of a transaction, allowing us to check for the existence of a `Profile` after creating a `User`.
+
+This example is continued in the [Deferrable Triggers](deferrable.md) section.
+
+## Tracking model history and changes
+
+Check out [django-pghistory](https://django-pghistory.readthedocs.io) to snapshot model changes and attach context from your application (e.g. the authenticated user) to the event.
+
+<a id="func_model_properties"></a>
+## Model properties in the func
+
+When writing triggers in the model `Meta`, it's not possible to access properties of the model like the database name or fields. [pgtrigger.Func][] solves this by exposing the following variables you can use in a template string:
+
+* **meta**: The `._meta` of the model.
+* **fields**: The fields of the model, accessible as attributes.
+* **columns**: The field columns. `columns.field_name` will return the database column of the `field_name` field.
+
+For example, say that we have the following model and trigger:
+
+```python
+class MyModel(models.Model):
+    text_field = models.TextField()
+
+    class Meta:
+        triggers = [
+            pgtrigger.Trigger(
+                func=pgtrigger.Func(
+                    """
+                    # This is only pseudocode
+                    SELECT {columns.text_field} FROM {meta.db_table};
+                    """
+                )
+            )
+        ]
+```
+
+Above the [pgtrigger.Func][] references the table name of the model and the column of `text_field`.
+
+!!! note
+
+    Remember to escape curly bracket characters when using [pgtrigger.Func][].
+
 ## Statement-level triggers and transition tables
 
 So far most of the examples have been for triggers that fire once per row. Statement-level triggers are fired once per statement and allow more flexibility and performance tuning for some scenarios. 
 
 Instead of `OLD` and `NEW` rows, statement-level triggers can use "transition tables" to access temporary tables of old and new rows. One can use the [pgtrigger.Referencing][] construct to configure this. See [this StackExchange example](https://dba.stackexchange.com/a/177468) for more explanations about transition tables.
-
-!!! note
-
-    Transition tables are only available in Postgres 10 and up.
 
 Here we have a history model that keeps track of changes to a field in the tracked model. We create a statement-level trigger that logs the old and new fields to the history model:
 
@@ -400,53 +447,80 @@ print(HistoryModel.values('old_field', 'new_field'))
 
     When considering use of statment-level triggers for performance reasons, keep in mind that additional queries executed by triggers do not involve expensive round-trips from the application. A less-complex row-level trigger may be worth the performance cost.
 
-## Ensuring child models exist
+<a id="cond_values"></a>
+## Conditional statement-level triggers
 
-Consider a `Profile` model that has a `OneToOne` to Django's `User` model:
+Postgres only natively supports conditions on row-level triggers, however, `django-pgtrigger` provides a [pgtrigger.CondValues][] trigger that can aid in writing conditional statement-level triggers. It does this by taking a `condition` and providing you with three template variables to use in your [pgtrigger.Func][]:
+
+- **cond_old_values**: A `SELECT` statement representing the `OLD` values filtered by the condition.
+- **cond_new_values**: A `SELECT` statement representing the `NEW` values filtered by the condition.
+- **cond_from**: A fragment one can use in a `SELECT` if one desires to write their own `SELECT` or obtain data from both the new and old values simulaneously.
+
+Here's an example of a statement-level trigger that loops through all old values that match a condition in an update:
 
 ```python
-class Profile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+pgtrigger.CondValues(
+    name="cond_values_protect",
+    when=pgtrigger.After,
+    operation=pgtrigger.Update,
+    declare=[("val", "RECORD")],
+    func=pgtrigger.Func(
+        """
+        FOR val IN {cond_new_values} LOOP RAISE EXCEPTION 'uh oh'; END LOOP;
+        RETURN NULL;
+        """
+    ),
+    condition=pgtrigger.Q(new__int_field__gt=0, old__int_field__lt=100),
+)
 ```
 
-We use a "deferrable" trigger to ensure a `Profile` exists for every `User`. Deferrable triggers can execute at the end of a transaction, allowing us to check for the existence of a `Profile` after creating a `User`.
+In the above, the condition is used to render the `cond_new_values` variable, which is equivalent to:
 
-This example is continued in the [Deferrable Triggers](deferrable.md) section.
+```sql
+SELECT old_values.* FROM old_values
+JOIN new_values ON old_values.id = new_values.id
+WHERE new_values.int_field > 0 AND old_values.int_field < 100
+```
 
-## Tracking model history and changes
-
-Check out [django-pghistory](https://django-pghistory.readthedocs.io) to snapshot model changes and attach context from your application (e.g. the authenticated user) to the event.
-
-<a id="func_model_properties"></a>
-## Model properties in the func
-
-When writing triggers in the model `Meta`, it's not possible to access properties of the model like the database name or fields. [pgtrigger.Func][] solves this by exposing the following variables you can use in a template string:
-
-* **meta**: The `._meta` of the model.
-* **fields**: The fields of the model, accessible as attributes.
-* **columns**: The field columns. `columns.field_name` will return the database column of the `field_name` field.
-
-For example, say that we have the following model and trigger:
+Let's extend our history audit trigger from the previous example to conditionally track history:
 
 ```python
-class MyModel(models.Model):
-    text_field = models.TextField()
+class HistoryModel(models.Model):
+    old_field = models.CharField(max_length=32)
+    new_field = models.CharField(max_length=32)
+
+class TrackedModel(models.Model):
+    field = models.CharField(max_length=32)
 
     class Meta:
         triggers = [
-            pgtrigger.Trigger(
-                func=pgtrigger.Func(
-                    """
-                    # This is only pseudocode
-                    SELECT {columns.text_field} FROM {meta.db_table};
-                    """
-                )
+            pgtrigger.CondValues(
+                name="track_history",
+                when=pgtrigger.After,
+                operation=pgtrigger.Update,
+                condition=pgtrigger.(old__field="hello")
+                func=pgtrigger.Func(f"""
+                    INSERT INTO {HistoryModel._meta.db_table}(old_field, new_field)
+                    SELECT
+                        old_values.field AS old_field,
+                        new_values.field AS new_field
+                    FROM {{cond_from}}
+                    RETURN NULL;
+                """),
             )
         ]
 ```
 
-Above the [pgtrigger.Func][] references the table name of the model and the column of `text_field`.
+In the above, we've extended the previous cookbook example of history tracking by conditionally
+only tracking changes when the old row's `field` is `"hello"`. We read directly from the
+`{cond_from}` variable to get a joined `old_values` and `new_values` table based on our condition.
 
-!!! note
+Keep the following important points in mind when using [pgtrigger.CondValues][]:
 
-    Remember to escape curly bracket characters when using [pgtrigger.Func][].
+- Transition tables named `old_values` and `new_values` are defined in the `referencing` clause and required when constructing our utility variables. Overriding this will cause an error.
+- Filtered versions of these transition tables are available if writing a `SELECT` with `{cond_from}`. I.e. `SELECT old_values.id FROM {cond_from}` will select the `id` from `old_values` with the condition applied.
+- In a `pgtrigger.Update` trigger, old and new values are joined together on the primary key. In other words, updates to primary key fields will cause those rows to be excluded from the results.
+
+    !!! tip
+
+        Although it is not standard to update primary keys, consider adding an additional [pgtrigger.Protect][] trigger to ensure primary keys are never updated when using [pgtrigger.CondValues][].

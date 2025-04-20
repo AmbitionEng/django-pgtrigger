@@ -1,5 +1,7 @@
 """Additional goodies"""
 
+from __future__ import annotations
+
 import functools
 import itertools
 import operator
@@ -302,3 +304,76 @@ class UpdateSearchVector(core.Trigger):
             f"tsvector_update_trigger({utils.quote(vector_col)},"
             f" {utils.quote(self.config_name)}, {rendered_document_cols})"
         )
+
+
+class CondValues(core.Trigger):
+    """
+    A statement-level trigger that simulates a conditional row-level trigger.
+
+    Renders supplied conditions as a filtered `cond_values` variable that can be
+    used in the function template.
+    """
+
+    level: core.Level = core.Statement
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+
+        if self.operation not in (core.Insert, core.Update, core.Delete):
+            raise ValueError(
+                "CondValues triggers can only be used with single Insert, "
+                "Update, or Delete operations."
+            )
+
+        if self.referencing:
+            raise ValueError("CondValues triggers do not support referencing declarations.")
+
+        if self.operation == core.Insert:
+            self.referencing = core.Referencing(new="new_values")
+        elif self.operation == core.Update:
+            self.referencing = core.Referencing(old="old_values", new="new_values")
+        elif self.operation == core.Delete:
+            self.referencing = core.Referencing(old="old_values")
+        else:
+            raise AssertionError(f'Invalid operation "{self.operation}"')
+
+    def render_condition(self, model: models.Model) -> str:
+        """Ignore condition rendering since we are placing it in the trigger body."""
+        return ""
+
+    def get_func_template_kwargs(self, model: models.Model) -> dict[str, Any]:
+        """
+        Provides a cond_values variable to the function template.
+        """
+        condition = super().render_condition(model)
+        cond_kwargs = {}
+
+        condition = condition.replace("OLD.", "old_values.").replace("NEW.", "new_values.")
+        if condition.startswith("WHEN "):
+            condition = f"WHERE {condition[5:]}"
+
+        if self.operation == core.Insert:
+            if "old_values" in condition:
+                raise ValueError("Cannot reference OLD values in INSERT operations.")
+
+            cond_from = f"new_values {condition}"
+            cond_kwargs["cond_new_values"] = f"SELECT * FROM {cond_from}"
+        elif self.operation == core.Update:
+            pk_columns = _get_columns(model, model._meta.pk)
+            old_pk_cols = ", ".join(f'old_values."{col}"' for col in pk_columns)
+            new_pk_cols = ", ".join(f'new_values."{col}"' for col in pk_columns)
+            join = f"({old_pk_cols}) = ({new_pk_cols})"
+            cond_from = f"old_values JOIN new_values ON {join} {condition}"
+            cond_kwargs["cond_new_values"] = f"SELECT new_values.* FROM {cond_from}"
+            cond_kwargs["cond_old_values"] = f"SELECT old_values.* FROM {cond_from}"
+        elif self.operation == core.Delete:
+            if "new_values" in condition:
+                raise ValueError("Cannot reference NEW values in DELETE operations.")
+
+            cond_from = f"old_values {condition}"
+            cond_kwargs["cond_old_values"] = f"SELECT * FROM {cond_from}"
+        else:
+            raise AssertionError(f'Invalid operation "{self.operation}"')
+
+        cond_kwargs["cond_from"] = cond_from
+        return super().get_func_template_kwargs(model) | cond_kwargs

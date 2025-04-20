@@ -1,5 +1,8 @@
+import datetime as dt
+
 import ddf
 import django
+import pgbulk
 import pytest
 from django.core.exceptions import FieldDoesNotExist
 
@@ -227,3 +230,191 @@ def test_custom_db_table_protect_trigger():
     deletion_protected_model = ddf.G(models.CustomTableName)
     with utils.raises_trigger_error(match="Cannot delete rows"):
         deletion_protected_model.delete()
+
+
+@pytest.mark.django_db
+def test_cond_values_protect():
+    """Verify cond_values trigger with protection-like trigger."""
+
+    # Test a simple protection trigger that loops through conditional rows
+    cond_values_raise = pgtrigger.CondValues(
+        name="cond_values_protect",
+        when=pgtrigger.After,
+        operation=pgtrigger.Insert,
+        declare=[("val", "RECORD")],
+        func=pgtrigger.Func(
+            """
+            FOR val IN {cond_new_values} LOOP RAISE EXCEPTION 'hit condition'; END LOOP;
+            RETURN NULL;
+            """
+        ),
+        condition=pgtrigger.Q(new__int_field__gt=0),
+    )
+
+    with cond_values_raise.install(models.TestTrigger):
+        ddf.G(models.TestTrigger, int_field=0)
+        with utils.raises_trigger_error(match="hit condition"):
+            models.TestTrigger.objects.create(int_field=2)
+
+
+@pytest.mark.django_db
+def test_cond_values_protect_no_condition():
+    """Verify cond_values trigger with protection-like trigger."""
+
+    # Test a simple protection trigger that loops through conditional rows
+    cond_values_raise = pgtrigger.CondValues(
+        name="cond_values_protect",
+        when=pgtrigger.After,
+        operation=pgtrigger.Insert,
+        declare=[("val", "RECORD")],
+        func=pgtrigger.Func(
+            """
+            FOR val IN {cond_new_values} LOOP RAISE EXCEPTION 'hit condition'; END LOOP;
+            RETURN NULL;
+            """
+        ),
+    )
+
+    with cond_values_raise.install(models.TestTrigger):
+        with utils.raises_trigger_error(match="hit condition"):
+            models.TestTrigger.objects.create(int_field=2)
+
+
+@pytest.mark.django_db
+def test_cond_values_protect_custom_condition():
+    """Verify cond_values trigger with a custom protection-like condition."""
+
+    cond_values_raise = pgtrigger.CondValues(
+        name="cond_values_protect_update",
+        when=pgtrigger.After,
+        operation=pgtrigger.Update,
+        declare=[("val", "RECORD")],
+        func=pgtrigger.Func(
+            """
+            FOR val IN {cond_new_values} LOOP RAISE EXCEPTION 'hit condition'; END LOOP;
+            RETURN NULL;
+            """
+        ),
+        condition=pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
+    )
+
+    with cond_values_raise.install(models.TestTrigger):
+        ddf.G(models.TestTrigger, int_field=0, n=5)
+        # A redundant update should not trigger
+        models.TestTrigger.objects.update(int_field=0)
+
+        with utils.raises_trigger_error(match="hit condition"):
+            models.TestTrigger.objects.update(int_field=2)
+
+
+@pytest.mark.django_db
+def test_cond_values_log():
+    """Verify cond_values trigger works on test model"""
+    cond_values_log = pgtrigger.CondValues(
+        name="cond_values_log",
+        when=pgtrigger.After,
+        operation=pgtrigger.Update,
+        declare=[("val", "RECORD")],
+        func=pgtrigger.Func(
+            f"""
+            INSERT INTO {models.TestTrigger._meta.db_table} (field, int_field, dt_field)
+            SELECT new_values.field, new_values.int_field, old_values.dt_field
+            FROM {{cond_from}};
+            RETURN NULL;
+            """
+        ),
+        condition=pgtrigger.Q(new__int_field__gt=0, old__int_field__lte=100),
+    )
+
+    with cond_values_log.install(models.TestTrigger):
+        assert models.TestTrigger.objects.count() == 0
+        ddf.G(models.TestTrigger, int_field=0, field="a", dt_field=dt.datetime(2015, 1, 1), n=5)
+        assert models.TestTrigger.objects.count() == 5
+
+        # The conditional statement trigger should not fire
+        models.TestTrigger.objects.update(int_field=-1)
+        assert models.TestTrigger.objects.count() == 5
+
+        # The condition will fire this time, creating 5 new rows
+        models.TestTrigger.objects.update(
+            int_field=101, dt_field=dt.datetime(2016, 1, 2), field="b"
+        )
+        assert models.TestTrigger.objects.count() == 10
+        # Verify the values of the last six rows
+        for row in models.TestTrigger.objects.order_by("id")[6:]:
+            assert row.int_field == 101
+            assert row.field == "b"
+            assert row.dt_field == dt.datetime(2015, 1, 1)
+
+        # Updating should not trigger
+        models.TestTrigger.objects.update(int_field=1)
+        assert models.TestTrigger.objects.count() == 10
+
+        # Do a bulk update with different values
+        test_triggers = list(models.TestTrigger.objects.order_by("id"))
+        # These five should not trigger
+        for val in test_triggers[:5]:
+            val.int_field = 0
+
+        pgbulk.update(models.TestTrigger, test_triggers)
+        assert models.TestTrigger.objects.count() == 15
+
+
+def test_cond_values_properties():
+    """Verify CondValues trigger properties."""
+    with pytest.raises(ValueError, match="single Insert"):
+        pgtrigger.CondValues(
+            name="cond_values_properties",
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Insert,
+        )
+
+    with pytest.raises(ValueError, match="referencing"):
+        pgtrigger.CondValues(
+            name="cond_values_properties",
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            referencing=pgtrigger.Referencing(new="new_values"),
+        )
+
+    insert_cond_values = pgtrigger.CondValues(
+        name="cond_values_properties",
+        when=pgtrigger.After,
+        operation=pgtrigger.Insert,
+    )
+    assert insert_cond_values.referencing.new == "new_values"
+    assert insert_cond_values.referencing.old is None
+
+    insert_cond_values = pgtrigger.CondValues(
+        name="cond_values_properties",
+        when=pgtrigger.After,
+        operation=pgtrigger.Update,
+    )
+    assert insert_cond_values.referencing.new == "new_values"
+    assert insert_cond_values.referencing.old == "old_values"
+
+    delete_cond_values = pgtrigger.CondValues(
+        name="cond_values_properties",
+        when=pgtrigger.After,
+        operation=pgtrigger.Delete,
+    )
+    assert delete_cond_values.referencing.new is None
+    assert delete_cond_values.referencing.old == "old_values"
+
+    with pytest.raises(ValueError, match="OLD values"):
+        pgtrigger.CondValues(
+            name="cond_values_properties",
+            when=pgtrigger.After,
+            operation=pgtrigger.Insert,
+            condition=pgtrigger.Q(old__int_field__gt=0),
+            func=pgtrigger.Func("RETURN NULL;"),
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="NEW values"):
+        pgtrigger.CondValues(
+            name="cond_values_properties",
+            when=pgtrigger.After,
+            operation=pgtrigger.Delete,
+            condition=pgtrigger.Q(new__int_field__gt=0),
+            func=pgtrigger.Func("RETURN NULL;"),
+        ).render_func(models.TestTrigger)
