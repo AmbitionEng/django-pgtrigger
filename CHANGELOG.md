@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.15.0 (2025-04-20)
+
+#### Improvements
+
+  - Added the `pgtrigger.CondValues` trigger utility for writing conditional statement-level triggers by [@wesleykendall](https://github.com/wesleykendall) in [#204](https://github.com/AmbitionEng/django-pgtrigger/pull/204).
+
 ## 4.14.0 (2025-04-18)
 
 #### Changes
