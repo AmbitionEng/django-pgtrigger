@@ -55,6 +55,9 @@ class _Primitive:
     def __str__(self):
         return self.name
 
+    def __hash__(self):
+        return hash(self.name)
+
 
 class Level(_Primitive):
     values = ("ROW", "STATEMENT")

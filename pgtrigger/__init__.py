@@ -3,7 +3,6 @@ import django
 from pgtrigger.contrib import (
     FSM,
     Composer,
-    CondValues,
     Protect,
     ReadOnly,
     SoftDelete,
@@ -74,7 +73,6 @@ __all__ = [
     "Before",
     "Composer",
     "Condition",
-    "CondValues",
     "constraints",
     "Deferred",
     "Delete",

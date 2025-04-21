@@ -405,6 +405,111 @@ def test_composer_referencing(operation, expected):
     assert composer.referencing == expected
 
 
+@pytest.mark.parametrize(
+    "condition, expected",
+    [
+        (None, 'old_values JOIN new_values ON (old_values."id") = (new_values."id")'),
+        (
+            pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (new_values.* IS DISTINCT FROM old_values.*)',  # noqa
+        ),
+        (
+            pgtrigger.Q(new__int_field__gt=1, old__int_field__lte=100),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (new_values."int_field" > 1 AND old_values."int_field" <= 100)',  # noqa
+        ),
+    ],
+)
+def test_composer_get_func_template_kwargs_cond_joined_values(condition, expected):
+    """Verify Composer trigger get_func_template_kwargs for the cond_joined_values property."""
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            condition=condition,
+            func=pgtrigger.Func("RETURN NULL;"),
+        )
+        .get_func_template_kwargs(models.TestTrigger)["cond_joined_values"]
+        .strip()
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "condition, expected",
+    [
+        (None, "old_values"),
+        (
+            pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (new_values.* IS DISTINCT FROM old_values.*)',  # noqa
+        ),
+        (
+            pgtrigger.Q(old__int_field__gt=1),
+            'old_values WHERE (old_values."int_field" > 1)',
+        ),
+        (
+            pgtrigger.Q(old__int_field__gt=1) | pgtrigger.Q(new__int_field__lte=100),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (old_values."int_field" > 1 OR new_values."int_field" <= 100)',  # noqa
+        ),
+    ],
+)
+def test_composer_get_func_template_kwargs_cond_old_values(condition, expected):
+    """Verify Composer trigger get_func_template_kwargs for the cond_old_values property."""
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            condition=condition,
+            func=pgtrigger.Func("RETURN NULL;"),
+        )
+        .get_func_template_kwargs(models.TestTrigger)["cond_old_values"]
+        .strip()
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "condition, expected",
+    [
+        (None, "new_values"),
+        (
+            pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (new_values.* IS DISTINCT FROM old_values.*)',  # noqa
+        ),
+        (
+            pgtrigger.Q(new__int_field__gt=1),
+            'new_values WHERE (new_values."int_field" > 1)',
+        ),
+        (
+            pgtrigger.Q(old__int_field__gt=1),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (old_values."int_field" > 1)',  # noqa
+        ),
+        (
+            pgtrigger.Q(old__int_field__gt=1) | pgtrigger.Q(new__int_field__lte=100),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (old_values."int_field" > 1 OR new_values."int_field" <= 100)',  # noqa
+        ),
+    ],
+)
+def test_composer_get_func_template_kwargs_cond_new_values(condition, expected):
+    """Verify Composer trigger get_func_template_kwargs for the cond_new_values property."""
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            condition=condition,
+            func=pgtrigger.Func("RETURN NULL;"),
+        )
+        .get_func_template_kwargs(models.TestTrigger)["cond_new_values"]
+        .strip()
+        == expected
+    )
+
+
 def test_composer_properties():
     """Verify Composer trigger properties."""
     with pytest.raises(ValueError, match="referencing"):
@@ -416,44 +521,85 @@ def test_composer_properties():
             referencing=pgtrigger.Referencing(new="new_values"),
         )
 
-    insert_cond_values = pgtrigger.CondValues(
-        name="cond_values_properties",
-        when=pgtrigger.After,
-        operation=pgtrigger.Insert,
+    func = pgtrigger.Func("RETURN NULL;")
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            func={
+                pgtrigger.Statement: func,
+            },
+        ).get_func(models.TestTrigger)
+        == func
     )
-    assert insert_cond_values.referencing.new == "new_values"
-    assert insert_cond_values.referencing.old is None
-
-    insert_cond_values = pgtrigger.CondValues(
-        name="cond_values_properties",
-        when=pgtrigger.After,
-        operation=pgtrigger.Update,
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Row,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            func={
+                pgtrigger.Row: func,
+            },
+        ).get_func(models.TestTrigger)
+        == func
     )
-    assert insert_cond_values.referencing.new == "new_values"
-    assert insert_cond_values.referencing.old == "old_values"
 
-    delete_cond_values = pgtrigger.CondValues(
-        name="cond_values_properties",
-        when=pgtrigger.After,
-        operation=pgtrigger.Delete,
-    )
-    assert delete_cond_values.referencing.new is None
-    assert delete_cond_values.referencing.old == "old_values"
-
-    with pytest.raises(ValueError, match="OLD values"):
-        pgtrigger.CondValues(
-            name="cond_values_properties",
+    # Verify we can't render the func if it references a non-existent transition table
+    with pytest.raises(ValueError, match="references OLD"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
             when=pgtrigger.After,
             operation=pgtrigger.Insert,
-            condition=pgtrigger.Q(old__int_field__gt=0),
-            func=pgtrigger.Func("RETURN NULL;"),
+            func="SELECT * FROM old_values.*",
         ).render_func(models.TestTrigger)
 
-    with pytest.raises(ValueError, match="NEW values"):
-        pgtrigger.CondValues(
-            name="cond_values_properties",
+    with pytest.raises(ValueError, match="references OLD"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Insert,
+            func="SELECT * FROM old_values.*",
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references OLD"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Insert,
+            func=pgtrigger.Func("SELECT * FROM {cond_old_values}"),
+            condition=pgtrigger.AnyChange(),
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references NEW"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
             when=pgtrigger.After,
             operation=pgtrigger.Delete,
-            condition=pgtrigger.Q(new__int_field__gt=0),
-            func=pgtrigger.Func("RETURN NULL;"),
+            func="SELECT * FROM new_values.*",
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references NEW"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Delete,
+            func="SELECT * FROM new_values.*",
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references NEW"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Delete,
+            func=pgtrigger.Func("SELECT * FROM {cond_new_values}"),
+            condition=pgtrigger.AnyChange(),
         ).render_func(models.TestTrigger)
