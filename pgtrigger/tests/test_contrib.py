@@ -225,6 +225,100 @@ def test_protect():
 
 
 @pytest.mark.django_db
+def test_protect_statement_level_insert_update():
+    """Verify insert/update protect trigger works on test model"""
+    cond_protect = pgtrigger.Protect(
+        name="cond_values_protect",
+        operation=pgtrigger.Insert,
+        level=pgtrigger.Statement,
+        condition=pgtrigger.Q(new__int_field__gt=100),
+    )
+
+    with cond_protect.install(models.TestTrigger):
+        models.TestTrigger.objects.bulk_create(
+            [
+                models.TestTrigger(int_field=2),
+                models.TestTrigger(int_field=20),
+                models.TestTrigger(int_field=30),
+            ]
+        )
+        with utils.raises_trigger_error(match="Cannot insert rows"):
+            models.TestTrigger.objects.bulk_create(
+                [
+                    models.TestTrigger(int_field=2),
+                    models.TestTrigger(int_field=200),
+                ]
+            )
+
+    cond_protect = pgtrigger.Protect(
+        name="cond_values_protect",
+        operation=pgtrigger.Update,
+        level=pgtrigger.Statement,
+        condition=pgtrigger.Q(new__int_field__gt=100, old__int_field__lte=100),
+    )
+
+    with cond_protect.install(models.TestTrigger):
+        models.TestTrigger.objects.bulk_create(
+            [
+                models.TestTrigger(int_field=2),
+                models.TestTrigger(int_field=20),
+                models.TestTrigger(int_field=30),
+            ]
+        )
+        models.TestTrigger.objects.update(int_field=1)
+        with utils.raises_trigger_error(match="Cannot update rows"):
+            models.TestTrigger.objects.update(int_field=101)
+
+
+@pytest.mark.django_db
+def test_protect_statement_level_delete():
+    """Verify deletion protect trigger works on test model"""
+    cond_protect = pgtrigger.Protect(
+        name="cond_values_protect",
+        operation=pgtrigger.Delete,
+        level=pgtrigger.Statement,
+        condition=pgtrigger.Q(old__int_field__gt=20),
+    )
+
+    with (
+        cond_protect.install(models.TestTrigger),
+        pgtrigger.ignore("tests.TestTriggerProxy:protect_delete"),
+    ):
+        values = models.TestTrigger.objects.bulk_create(
+            [
+                models.TestTrigger(int_field=2),
+                models.TestTrigger(int_field=20),
+                models.TestTrigger(int_field=30),
+            ]
+        )
+        print("values", values[0].int_field)
+        values[0].delete()
+        with utils.raises_trigger_error(match="Cannot delete rows"):
+            models.TestTrigger.objects.all().delete()
+
+
+@pytest.mark.django_db
+def test_readonly_statement_level():
+    """Verify readonly statement protect trigger works on test model"""
+    cond_protect = pgtrigger.ReadOnly(
+        name="cond_values_protect",
+        level=pgtrigger.Statement,
+        fields=["int_field"],
+    )
+
+    with cond_protect.install(models.TestTrigger):
+        models.TestTrigger.objects.bulk_create(
+            [
+                models.TestTrigger(int_field=2),
+                models.TestTrigger(int_field=20),
+                models.TestTrigger(int_field=30),
+            ]
+        )
+        with utils.raises_trigger_error(match="Cannot update rows"):
+            models.TestTrigger.objects.update(int_field=101)
+
+
+@pytest.mark.django_db
 def test_custom_db_table_protect_trigger():
     """Verify custom DB table names have successful triggers"""
     deletion_protected_model = ddf.G(models.CustomTableName)
