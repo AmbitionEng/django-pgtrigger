@@ -87,7 +87,7 @@ class Referencing:
         self.new = new
 
     def __eq__(self, other):
-        if not isinstance(other, Referencing):
+        if not isinstance(other, Referencing):  # pragma: no cover
             return False
 
         return self.old == other.old and self.new == other.new

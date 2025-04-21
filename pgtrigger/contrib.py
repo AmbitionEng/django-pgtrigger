@@ -56,22 +56,16 @@ class Composer(core.Trigger):
         if self.referencing is not None:
             raise ValueError("Composer triggers do not support referencing declarations.")
 
-        # Make old/new rows available based on the operation or combination of operations
-        if (
-            self.level == core.Statement
-            and not any(isinstance(op, core.UpdateOf) for op in self.operation)
-            and core.Truncate not in self.operation
-        ):
-            if core.Insert in self.operation and core.Delete not in self.operation:
-                self.referencing = core.Referencing(new="new_values")
-            elif core.Delete in self.operation and core.Insert not in self.operation:
-                self.referencing = core.Referencing(old="old_values")
-            elif (
-                core.Update in self.operation
-                and core.Delete not in self.operation
-                and core.Insert not in self.operation
-            ):
+        # Make old/new rows available based on the operation or combination of operations.
+        if self.level == core.Statement:
+            # NOTE(@wesleykendall): Postgres doesn't support transition tables on more than one
+            # operation.
+            if self.operation == core.Update:
                 self.referencing = core.Referencing(old="old_values", new="new_values")
+            elif self.operation == core.Delete:
+                self.referencing = core.Referencing(old="old_values")
+            elif self.operation == core.Insert:
+                self.referencing = core.Referencing(new="new_values")
 
     def get_func(self, model: models.Model) -> Union[str, core.Func]:
         """Allow a dict of funcs for statement/row level triggers."""

@@ -476,14 +476,8 @@ def test_composer_log():
         (pgtrigger.UpdateOf("field") | pgtrigger.Insert, None),
         (pgtrigger.Truncate | pgtrigger.Insert, None),
         (pgtrigger.Update, pgtrigger.Referencing(old="old_values", new="new_values")),
-        (
-            pgtrigger.Update | pgtrigger.Insert,
-            pgtrigger.Referencing(new="new_values"),
-        ),
-        (
-            pgtrigger.Update | pgtrigger.Delete,
-            pgtrigger.Referencing(old="old_values"),
-        ),
+        (pgtrigger.Update | pgtrigger.Insert, None),
+        (pgtrigger.Update | pgtrigger.Delete, None),
         (pgtrigger.Update | pgtrigger.Insert | pgtrigger.Delete, None),
         (pgtrigger.Delete, pgtrigger.Referencing(old="old_values")),
     ],
@@ -660,7 +654,7 @@ def test_composer_properties():
             func="SELECT * FROM old_values.*",
         ).render_func(models.TestTrigger)
 
-    with pytest.raises(ValueError, match="references OLD"):
+    with pytest.raises(ValueError, match="references NEW"):
         pgtrigger.Composer(
             name="composer_values_properties",
             level=pgtrigger.Statement,

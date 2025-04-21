@@ -20,7 +20,12 @@ For example:
 - `pgtrigger.Delete` makes `references=pgtrigger.References(old='old_values')`
 - `pgtrigger.Insert` makes `pgtrigger.References(new='new_values')`
 
-Combinations of these will intersect references. `pgtrigger.UpdateOf` and `pgtrigger.Truncate` always generate null references.
+`pgtrigger.UpdateOf` and `pgtrigger.Truncate` always generate null references.
+
+
+!!! note
+
+    Combinations of operations is not supported by Postgres when using transition tables, so operations like `pgtrigger.Update | pgtrigger.Delete` will result in no transition tables being declared.
 
 ## Template variables when using conditions
 
