@@ -439,9 +439,6 @@ class Composer(core.Trigger):
                 "cond_joined_values": cond_joined_values,
                 "cond_old_values": cond_old_values,
                 "cond_new_values": cond_new_values,
-                "select_cond_joined_values": f"SELECT * FROM {cond_joined_values}",
-                "select_cond_old_values": f"SELECT * FROM {cond_old_values}",
-                "select_cond_new_values": f"SELECT * FROM {cond_new_values}",
             }
 
         return func_template_kwargs
