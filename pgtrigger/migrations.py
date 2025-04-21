@@ -122,9 +122,11 @@ class AddTrigger(TriggerOperationMixin, IndexOperation):
         return f"{self.model_name_lower}_{self.trigger.name.lower()}"
 
 
-def _get_trigger_by_name(model_state: ModelState, name: str) -> compiler.Trigger:
+def _get_trigger_by_name(
+    model_state: ModelState, name: str
+) -> Union[compiler.Trigger, core.Trigger]:
     for trigger in model_state.options.get("triggers", []):  # pragma: no branch
-        assert isinstance(trigger, compiler.Trigger)
+        assert isinstance(trigger, (compiler.Trigger, core.Trigger))
         if trigger.name == name:
             return trigger
 
