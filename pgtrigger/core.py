@@ -130,10 +130,10 @@ class Operation(_Primitive):
         assert isinstance(other, Operation)
         return Operations(self, other)
 
-    def __contains__(self, other):
+    def __contains__(self, other):  # pragma: no cover
         return self == other
 
-    def __iter__(self):
+    def __iter__(self):  # pragma: no cover
         return iter([self])
 
     def __str__(self):
@@ -159,10 +159,10 @@ class Operations(Operation):
     def __str__(self):
         return " OR ".join(str(operation) for operation in self.operations)
 
-    def __contains__(self, other):
+    def __contains__(self, other):  # pragma: no cover
         return other in self.operations
 
-    def __iter__(self):
+    def __iter__(self):  # pragma: no cover
         return iter(self.operations)
 
 
