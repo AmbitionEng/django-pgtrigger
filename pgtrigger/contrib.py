@@ -379,7 +379,7 @@ class Composer(core.Trigger):
         # Make old/new rows available based on the operation or combination of operations
         if (
             self.level == core.Statement
-            and core.UpdateOf not in self.operation
+            and not any(isinstance(op, core.UpdateOf) for op in self.operation)
             and core.Truncate not in self.operation
         ):
             if core.Insert in self.operation and core.Delete not in self.operation:
@@ -428,12 +428,18 @@ class Composer(core.Trigger):
                 f"old_values JOIN new_values ON ({old_pk_cols}) = ({new_pk_cols}) {condition}"
             )
 
-            if "new_values." in condition:
+            if "new_values." in condition and "old_values." in condition:
+                cond_old_values = cond_joined_values
+                cond_new_values = cond_joined_values
+            elif "new_values." in condition:
                 cond_old_values = cond_joined_values
                 cond_new_values = f"new_values {condition}"
-            else:
+            elif "old_values." in condition:
                 cond_old_values = f"old_values {condition}"
                 cond_new_values = cond_joined_values
+            else:
+                cond_old_values = f"old_values {condition}"
+                cond_new_values = f"new_values {condition}"
 
             func_template_kwargs |= {
                 "cond_joined_values": cond_joined_values,

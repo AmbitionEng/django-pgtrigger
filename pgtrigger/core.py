@@ -83,6 +83,12 @@ class Referencing:
         self.old = old
         self.new = new
 
+    def __eq__(self, other):
+        if not isinstance(other, Referencing):
+            return False
+
+        return self.old == other.old and self.new == other.new
+
     def __str__(self):
         ref = "REFERENCING"
         if self.old:
@@ -124,6 +130,12 @@ class Operation(_Primitive):
     def __contains__(self, other):
         return self == other
 
+    def __iter__(self):
+        return iter([self])
+
+    def __str__(self):
+        return self.name
+
 
 class Operations(Operation):
     """For providing multiple operations `OR`ed together.
@@ -137,11 +149,18 @@ class Operations(Operation):
 
         self.operations = operations
 
+    def __or__(self, other):
+        assert isinstance(other, Operation)
+        return Operations(*self.operations, other)
+
     def __str__(self):
         return " OR ".join(str(operation) for operation in self.operations)
 
     def __contains__(self, other):
         return other in self.operations
+
+    def __iter__(self):
+        return iter(self.operations)
 
 
 Update = Operation("UPDATE")

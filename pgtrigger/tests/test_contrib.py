@@ -233,18 +233,22 @@ def test_custom_db_table_protect_trigger():
 
 
 @pytest.mark.django_db
-def test_cond_values_protect():
-    """Verify cond_values trigger with protection-like trigger."""
+def test_composer_protect():
+    """Verify composer trigger with protection-like trigger."""
 
     # Test a simple protection trigger that loops through conditional rows
-    cond_values_raise = pgtrigger.CondValues(
+    cond_values_raise = pgtrigger.Composer(
         name="cond_values_protect",
         when=pgtrigger.After,
         operation=pgtrigger.Insert,
+        level=pgtrigger.Statement,
         declare=[("val", "RECORD")],
         func=pgtrigger.Func(
             """
-            FOR val IN {cond_new_values} LOOP RAISE EXCEPTION 'hit condition'; END LOOP;
+            FOR val IN SELECT * FROM {cond_new_values}
+            LOOP
+            RAISE EXCEPTION 'hit condition';
+            END LOOP;
             RETURN NULL;
             """
         ),
@@ -258,18 +262,22 @@ def test_cond_values_protect():
 
 
 @pytest.mark.django_db
-def test_cond_values_protect_no_condition():
+def test_composer_protect_no_condition():
     """Verify cond_values trigger with protection-like trigger."""
 
     # Test a simple protection trigger that loops through conditional rows
-    cond_values_raise = pgtrigger.CondValues(
+    cond_values_raise = pgtrigger.Composer(
         name="cond_values_protect",
         when=pgtrigger.After,
         operation=pgtrigger.Insert,
+        level=pgtrigger.Statement,
         declare=[("val", "RECORD")],
         func=pgtrigger.Func(
             """
-            FOR val IN {cond_new_values} LOOP RAISE EXCEPTION 'hit condition'; END LOOP;
+            FOR val IN SELECT * FROM {cond_new_values}
+            LOOP
+            RAISE EXCEPTION 'hit condition';
+            END LOOP;
             RETURN NULL;
             """
         ),
@@ -281,17 +289,21 @@ def test_cond_values_protect_no_condition():
 
 
 @pytest.mark.django_db
-def test_cond_values_protect_custom_condition():
-    """Verify cond_values trigger with a custom protection-like condition."""
+def test_composer_protect_custom_condition():
+    """Verify composer trigger with a custom protection-like condition."""
 
-    cond_values_raise = pgtrigger.CondValues(
+    cond_values_raise = pgtrigger.Composer(
         name="cond_values_protect_update",
         when=pgtrigger.After,
         operation=pgtrigger.Update,
+        level=pgtrigger.Statement,
         declare=[("val", "RECORD")],
         func=pgtrigger.Func(
             """
-            FOR val IN {cond_new_values} LOOP RAISE EXCEPTION 'hit condition'; END LOOP;
+            FOR val IN SELECT * FROM {cond_new_values}
+            LOOP
+            RAISE EXCEPTION 'hit condition';
+            END LOOP;
             RETURN NULL;
             """
         ),
@@ -308,18 +320,19 @@ def test_cond_values_protect_custom_condition():
 
 
 @pytest.mark.django_db
-def test_cond_values_log():
-    """Verify cond_values trigger works on test model"""
-    cond_values_log = pgtrigger.CondValues(
+def test_composer_log():
+    """Verify composer trigger works on test model"""
+    cond_values_log = pgtrigger.Composer(
         name="cond_values_log",
         when=pgtrigger.After,
         operation=pgtrigger.Update,
+        level=pgtrigger.Statement,
         declare=[("val", "RECORD")],
         func=pgtrigger.Func(
             f"""
             INSERT INTO {models.TestTrigger._meta.db_table} (field, int_field, dt_field)
             SELECT new_values.field, new_values.int_field, old_values.dt_field
-            FROM {{cond_from}};
+            FROM {{cond_joined_values}};
             RETURN NULL;
             """
         ),
@@ -360,18 +373,44 @@ def test_cond_values_log():
         assert models.TestTrigger.objects.count() == 15
 
 
-def test_cond_values_properties():
-    """Verify CondValues trigger properties."""
-    with pytest.raises(ValueError, match="single Insert"):
-        pgtrigger.CondValues(
-            name="cond_values_properties",
-            when=pgtrigger.After,
-            operation=pgtrigger.Update | pgtrigger.Insert,
-        )
+@pytest.mark.parametrize(
+    "operation, expected",
+    [
+        (pgtrigger.Insert, pgtrigger.Referencing(new="new_values")),
+        (pgtrigger.Truncate, None),
+        (pgtrigger.UpdateOf("field"), None),
+        (pgtrigger.UpdateOf("field") | pgtrigger.Insert, None),
+        (pgtrigger.Truncate | pgtrigger.Insert, None),
+        (pgtrigger.Update, pgtrigger.Referencing(old="old_values", new="new_values")),
+        (
+            pgtrigger.Update | pgtrigger.Insert,
+            pgtrigger.Referencing(new="new_values"),
+        ),
+        (
+            pgtrigger.Update | pgtrigger.Delete,
+            pgtrigger.Referencing(old="old_values"),
+        ),
+        (pgtrigger.Update | pgtrigger.Insert | pgtrigger.Delete, None),
+        (pgtrigger.Delete, pgtrigger.Referencing(old="old_values")),
+    ],
+)
+def test_composer_referencing(operation, expected):
+    """Verify Composer trigger referencing."""
+    composer = pgtrigger.Composer(
+        name="composer_referencing",
+        level=pgtrigger.Statement,
+        when=pgtrigger.After,
+        operation=operation,
+    )
+    assert composer.referencing == expected
 
+
+def test_composer_properties():
+    """Verify Composer trigger properties."""
     with pytest.raises(ValueError, match="referencing"):
-        pgtrigger.CondValues(
-            name="cond_values_properties",
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
             when=pgtrigger.After,
             operation=pgtrigger.Update,
             referencing=pgtrigger.Referencing(new="new_values"),
