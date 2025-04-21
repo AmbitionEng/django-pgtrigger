@@ -1,4 +1,4 @@
-# Advanced Installation
+# Installation Edge Cases
 
 ## Third-party models
 

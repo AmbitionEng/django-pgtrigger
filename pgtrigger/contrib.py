@@ -1,5 +1,7 @@
 """Additional goodies"""
 
+from __future__ import annotations
+
 import functools
 import itertools
 import operator
@@ -35,18 +37,158 @@ def _get_columns(model, field):
     return cols
 
 
-class Protect(core.Trigger):
+class Composer(core.Trigger):
+    """A trigger that can work as a statement or row level trigger.
+
+    Automatically includes proper transition tables for statement-level triggers
+    based on the operation. If using a condition, provides utility variables
+    for accessing filtered transition tables.
+
+    See [the statement-level trigger section](./statement.md) for more information.
+    """
+
+    func: dict[core.Level, core.Func | str] | core.Func | str | None = None  # type: ignore
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        assert self.operation is not None
+
+        if self.referencing is not None:
+            raise ValueError("Composer triggers do not support referencing declarations.")
+
+        # Make old/new rows available based on the operation or combination of operations.
+        if self.level == core.Statement:
+            # NOTE(@wesleykendall): Postgres doesn't support transition tables on more than one
+            # operation.
+            if self.operation == core.Update:
+                self.referencing = core.Referencing(old="old_values", new="new_values")
+            elif self.operation == core.Delete:
+                self.referencing = core.Referencing(old="old_values")
+            elif self.operation == core.Insert:
+                self.referencing = core.Referencing(new="new_values")
+
+    def get_func(self, model: models.Model) -> Union[str, core.Func]:
+        """Allow a dict of funcs for statement/row level triggers."""
+        if isinstance(self.func, dict):
+            if self.level == core.Statement:
+                return self.func[core.Statement]
+            else:
+                return self.func[core.Row]
+        else:
+            return super().get_func(model)
+
+    def render_condition(self, model: models.Model) -> str:
+        """Ignore condition rendering in a statement level trigger."""
+        return "" if self.level == core.Statement else super().render_condition(model)
+
+    def get_func_template_kwargs(self, model: models.Model) -> dict[str, Any]:
+        """
+        Provides `cond_joined_values`, `cond_old_values`, and `cond_new_values` variables to the
+        function template.
+        """
+        func_template_kwargs = super().get_func_template_kwargs(model)
+
+        if self.level == core.Statement:  # pragma: no branch
+            condition = super().render_condition(model)
+
+            condition = condition.replace("OLD.", "old_values.").replace("NEW.", "new_values.")
+            if condition.startswith("WHEN "):
+                condition = f"WHERE {condition[5:]}"
+
+            pk_columns = _get_columns(model, model._meta.pk)
+            old_pk_cols = ", ".join(f'old_values."{col}"' for col in pk_columns)
+            new_pk_cols = ", ".join(f'new_values."{col}"' for col in pk_columns)
+            cond_joined_values = (
+                f"old_values JOIN new_values ON ({old_pk_cols}) = ({new_pk_cols}) {condition}"
+            )
+
+            if "new_values." in condition and "old_values." in condition:
+                cond_old_values = cond_joined_values
+                cond_new_values = cond_joined_values
+            elif "new_values." in condition:
+                cond_old_values = cond_joined_values
+                cond_new_values = f"new_values {condition}"
+            elif "old_values." in condition:
+                cond_old_values = f"old_values {condition}"
+                cond_new_values = cond_joined_values
+            else:
+                cond_old_values = f"old_values {condition}"
+                cond_new_values = f"new_values {condition}"
+
+            func_template_kwargs |= {
+                "cond_joined_values": cond_joined_values,
+                "cond_old_values": cond_old_values,
+                "cond_new_values": cond_new_values,
+            }
+
+        return func_template_kwargs
+
+    def render_func(self, model: models.Model) -> str:
+        rendered = super().render_func(model)
+
+        # Check if the function references OLD or NEW values when it shouldn't
+        if self.level == core.Statement:  # pragma: no branch
+            references_old = self.referencing and self.referencing.old
+            references_new = self.referencing and self.referencing.new
+
+            if "new_values." in rendered and not references_new:
+                raise ValueError(
+                    f'Composer trigger references NEW values, but operation "{self.operation}"'
+                    " doesn't allow for that."
+                )
+            elif "old_values." in rendered and not references_old:
+                raise ValueError(
+                    f'Composer trigger references OLD values, but operation "{self.operation}"'
+                    " doesn't allow for that."
+                )
+
+        return rendered
+
+
+class Protect(Composer):
     """A trigger that raises an exception."""
 
     when: core.When = core.Before
 
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.when = core.After if self.level == core.Statement else self.when
+
     def get_func(self, model):
-        sql = f"""
-            RAISE EXCEPTION
-                'pgtrigger: Cannot {str(self.operation).lower()} rows from % table',
+        if self.level == core.Row:
+            sql = f"""
+                RAISE EXCEPTION
+                    'pgtrigger: Cannot {str(self.operation).lower()} rows from % table',
                 TG_TABLE_NAME;
-        """
-        return self.format_sql(sql)
+            """
+            return self.format_sql(sql)
+        elif self.level == core.Statement:
+            if not self.referencing:  # pragma: no cover
+                raise ValueError(
+                    f'Unsupported operation "{self.operation}" for statement-level protect trigger'
+                )
+
+            if self.referencing.new and self.referencing.old:
+                transition_table = "cond_joined_values"
+            elif self.referencing.new:
+                transition_table = "cond_new_values"
+            elif self.referencing.old:
+                transition_table = "cond_old_values"
+            else:
+                raise AssertionError(f'Unexpected referencing declaration "{self.referencing}"')
+
+            return core.Func(
+                f"""
+                IF EXISTS (SELECT 1 FROM {{{transition_table}}}) THEN
+                    RAISE EXCEPTION
+                        'pgtrigger: Cannot {str(self.operation).lower()} rows from % table',
+                    TG_TABLE_NAME;
+                END IF;
+                RETURN NULL;
+                """
+            )
+        else:
+            raise AssertionError(f'Unexpected level "{self.level}"')
 
 
 class ReadOnly(Protect):

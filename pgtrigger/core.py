@@ -55,6 +55,9 @@ class _Primitive:
     def __str__(self):
         return self.name
 
+    def __hash__(self):
+        return hash(self.name)
+
 
 class Level(_Primitive):
     values = ("ROW", "STATEMENT")
@@ -82,6 +85,12 @@ class Referencing:
 
         self.old = old
         self.new = new
+
+    def __eq__(self, other):
+        if not isinstance(other, Referencing):  # pragma: no cover
+            return False
+
+        return self.old == other.old and self.new == other.new
 
     def __str__(self):
         ref = "REFERENCING"
@@ -121,6 +130,15 @@ class Operation(_Primitive):
         assert isinstance(other, Operation)
         return Operations(self, other)
 
+    def __contains__(self, other):  # pragma: no cover
+        return self == other
+
+    def __iter__(self):  # pragma: no cover
+        return iter([self])
+
+    def __str__(self):
+        return self.name
+
 
 class Operations(Operation):
     """For providing multiple operations `OR`ed together.
@@ -134,8 +152,18 @@ class Operations(Operation):
 
         self.operations = operations
 
+    def __or__(self, other):
+        assert isinstance(other, Operation)
+        return Operations(*self.operations, other)
+
     def __str__(self):
         return " OR ".join(str(operation) for operation in self.operations)
+
+    def __contains__(self, other):  # pragma: no cover
+        return other in self.operations
+
+    def __iter__(self):  # pragma: no cover
+        return iter(self.operations)
 
 
 Update = Operation("UPDATE")
@@ -512,19 +540,17 @@ class Func:
     def __init__(self, func):
         self.func = func
 
-    def render(self, model: models.Model) -> str:
+    def render(self, **kwargs: Any) -> str:
         """
         Render the SQL of the function.
 
         Args:
-            model: The model.
+            **kwargs: Keyword arguments to pass to the function template.
 
         Returns:
             The rendered SQL.
         """
-        fields = utils.AttrDict({field.name: field for field in model._meta.fields})
-        columns = utils.AttrDict({field.name: field.column for field in model._meta.fields})
-        return self.func.format(meta=model._meta, fields=fields, columns=columns)
+        return self.func.format(**kwargs)
 
 
 # Allows Trigger methods to be used as context managers, mostly for
@@ -752,6 +778,15 @@ class Trigger:
         """
         return f"{self.get_pgid(model)}()"
 
+    def get_func_template_kwargs(self, model: models.Model) -> dict[str, Any]:
+        """
+        Returns a dictionary of keyword arguments to pass to the function template
+        when using Func() classes.
+        """
+        fields = utils.AttrDict({field.name: field for field in model._meta.fields})
+        columns = utils.AttrDict({field.name: field.column for field in model._meta.fields})
+        return {"meta": model._meta, "fields": fields, "columns": columns}
+
     def render_func(self, model: models.Model) -> str:
         """
         Renders the func.
@@ -765,7 +800,7 @@ class Trigger:
         func = self.get_func(model)
 
         if isinstance(func, Func):
-            return func.render(model)
+            return func.render(**self.get_func_template_kwargs(model))
         else:
             return func
 

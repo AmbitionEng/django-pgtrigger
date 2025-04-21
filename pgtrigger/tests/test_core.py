@@ -68,6 +68,7 @@ def test_statement_row_level_logging():
     """
     ddf.G(models.ToLogModel, n=5, field="old_field")
 
+    assert models.ToLogModel.objects.count() == 5
     assert not models.LogEntry.objects.exists()
 
     models.ToLogModel.objects.update(field="new_field")
@@ -75,6 +76,19 @@ def test_statement_row_level_logging():
     # The statement-level trigger without references should have produced
     # one log entry
     assert models.LogEntry.objects.filter(level="STATEMENT", old_field__isnull=True).count() == 1
+
+    # Verify that we can ignore statement-level triggers. The `ToLogModel` should still update, but
+    # no triggers should fire
+    with pgtrigger.ignore(
+        "tests.ToLogModel:after_update_statement_test",
+        "tests.ToLogModel:update_of_statement_test",
+        "tests.ToLogModel:after_update_row_test",
+    ):
+        models.ToLogModel.objects.update(field="new_field2")
+        assert set(models.ToLogModel.objects.values_list("field", flat=True)) == {"new_field2"}
+        assert (
+            models.LogEntry.objects.filter(level="STATEMENT", old_field__isnull=True).count() == 1
+        )
 
     # The statement-level trigger with references should have made log
     # entries for all of the old values and the new updated values

@@ -335,15 +335,62 @@ class DocumentModel(models.Model):
 
     [pgtrigger.UpdateSearchVector][] triggers are incompatible with [pgtrigger.ignore][] and will raise a `RuntimeError` if used.
 
+## Ensuring child models exist
+
+Consider a `Profile` model that has a `OneToOne` to Django's `User` model:
+
+```python
+class Profile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+```
+
+We use a "deferrable" trigger to ensure a `Profile` exists for every `User`. Deferrable triggers can execute at the end of a transaction, allowing us to check for the existence of a `Profile` after creating a `User`.
+
+This example is continued in the [Deferrable Triggers](deferrable.md) section.
+
+## Tracking model history and changes
+
+Check out [django-pghistory](https://django-pghistory.readthedocs.io) to snapshot model changes and attach context from your application (e.g. the authenticated user) to the event.
+
+<a id="func_model_properties"></a>
+## Model properties in the func
+
+When writing triggers in the model `Meta`, it's not possible to access properties of the model like the database name or fields. [pgtrigger.Func][] solves this by exposing the following variables you can use in a template string:
+
+* **meta**: The `._meta` of the model.
+* **fields**: The fields of the model, accessible as attributes.
+* **columns**: The field columns. `columns.field_name` will return the database column of the `field_name` field.
+
+For example, say that we have the following model and trigger:
+
+```python
+class MyModel(models.Model):
+    text_field = models.TextField()
+
+    class Meta:
+        triggers = [
+            pgtrigger.Trigger(
+                func=pgtrigger.Func(
+                    """
+                    # This is only pseudocode
+                    SELECT {columns.text_field} FROM {meta.db_table};
+                    """
+                )
+            )
+        ]
+```
+
+Above the [pgtrigger.Func][] references the table name of the model and the column of `text_field`.
+
+!!! note
+
+    Remember to escape curly bracket characters when using [pgtrigger.Func][].
+
 ## Statement-level triggers and transition tables
 
 So far most of the examples have been for triggers that fire once per row. Statement-level triggers are fired once per statement and allow more flexibility and performance tuning for some scenarios. 
 
 Instead of `OLD` and `NEW` rows, statement-level triggers can use "transition tables" to access temporary tables of old and new rows. One can use the [pgtrigger.Referencing][] construct to configure this. See [this StackExchange example](https://dba.stackexchange.com/a/177468) for more explanations about transition tables.
-
-!!! note
-
-    Transition tables are only available in Postgres 10 and up.
 
 Here we have a history model that keeps track of changes to a field in the tracked model. We create a statement-level trigger that logs the old and new fields to the history model:
 
@@ -400,53 +447,4 @@ print(HistoryModel.values('old_field', 'new_field'))
 
     When considering use of statment-level triggers for performance reasons, keep in mind that additional queries executed by triggers do not involve expensive round-trips from the application. A less-complex row-level trigger may be worth the performance cost.
 
-## Ensuring child models exist
-
-Consider a `Profile` model that has a `OneToOne` to Django's `User` model:
-
-```python
-class Profile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-```
-
-We use a "deferrable" trigger to ensure a `Profile` exists for every `User`. Deferrable triggers can execute at the end of a transaction, allowing us to check for the existence of a `Profile` after creating a `User`.
-
-This example is continued in the [Deferrable Triggers](deferrable.md) section.
-
-## Tracking model history and changes
-
-Check out [django-pghistory](https://django-pghistory.readthedocs.io) to snapshot model changes and attach context from your application (e.g. the authenticated user) to the event.
-
-<a id="func_model_properties"></a>
-## Model properties in the func
-
-When writing triggers in the model `Meta`, it's not possible to access properties of the model like the database name or fields. [pgtrigger.Func][] solves this by exposing the following variables you can use in a template string:
-
-* **meta**: The `._meta` of the model.
-* **fields**: The fields of the model, accessible as attributes.
-* **columns**: The field columns. `columns.field_name` will return the database column of the `field_name` field.
-
-For example, say that we have the following model and trigger:
-
-```python
-class MyModel(models.Model):
-    text_field = models.TextField()
-
-    class Meta:
-        triggers = [
-            pgtrigger.Trigger(
-                func=pgtrigger.Func(
-                    """
-                    # This is only pseudocode
-                    SELECT {columns.text_field} FROM {meta.db_table};
-                    """
-                )
-            )
-        ]
-```
-
-Above the [pgtrigger.Func][] references the table name of the model and the column of `text_field`.
-
-!!! note
-
-    Remember to escape curly bracket characters when using [pgtrigger.Func][].
+For more information on statement-level triggers and how to run them conditionally, [see the section on statement-level triggers](./statement.md).

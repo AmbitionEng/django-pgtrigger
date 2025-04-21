@@ -54,6 +54,7 @@ Below are the core classes and functions of the `pgtrigger` module.
 :::pgtrigger.SoftDelete
 :::pgtrigger.FSM
 :::pgtrigger.UpdateSearchVector
+:::pgtrigger.Composer
 
 ## Runtime execution
 

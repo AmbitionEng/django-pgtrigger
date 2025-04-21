@@ -1,5 +1,8 @@
+import datetime as dt
+
 import ddf
 import django
+import pgbulk
 import pytest
 from django.core.exceptions import FieldDoesNotExist
 
@@ -222,8 +225,469 @@ def test_protect():
 
 
 @pytest.mark.django_db
+def test_protect_statement_level_insert_update():
+    """Verify insert/update protect trigger works on test model"""
+    cond_protect = pgtrigger.Protect(
+        name="composer_protect",
+        operation=pgtrigger.Insert,
+        level=pgtrigger.Statement,
+        condition=pgtrigger.Q(new__int_field__gt=100),
+    )
+
+    with cond_protect.install(models.TestTrigger):
+        models.TestTrigger.objects.bulk_create(
+            [
+                models.TestTrigger(int_field=2),
+                models.TestTrigger(int_field=20),
+                models.TestTrigger(int_field=30),
+            ]
+        )
+        with utils.raises_trigger_error(match="Cannot insert rows"):
+            models.TestTrigger.objects.bulk_create(
+                [
+                    models.TestTrigger(int_field=2),
+                    models.TestTrigger(int_field=200),
+                ]
+            )
+
+    cond_protect = pgtrigger.Protect(
+        name="composer_protect",
+        operation=pgtrigger.Update,
+        level=pgtrigger.Statement,
+        condition=pgtrigger.Q(new__int_field__gt=100, old__int_field__lte=100),
+    )
+
+    with cond_protect.install(models.TestTrigger):
+        models.TestTrigger.objects.bulk_create(
+            [
+                models.TestTrigger(int_field=2),
+                models.TestTrigger(int_field=20),
+                models.TestTrigger(int_field=30),
+            ]
+        )
+        models.TestTrigger.objects.update(int_field=1)
+        with utils.raises_trigger_error(match="Cannot update rows"):
+            models.TestTrigger.objects.update(int_field=101)
+
+
+@pytest.mark.django_db
+def test_protect_statement_level_delete():
+    """Verify deletion protect trigger works on test model"""
+    cond_protect = pgtrigger.Protect(
+        name="composer_protect",
+        operation=pgtrigger.Delete,
+        level=pgtrigger.Statement,
+        condition=pgtrigger.Q(old__int_field__gt=20),
+    )
+
+    with (
+        cond_protect.install(models.TestTrigger),
+        pgtrigger.ignore("tests.TestTriggerProxy:protect_delete"),
+    ):
+        values = models.TestTrigger.objects.bulk_create(
+            [
+                models.TestTrigger(int_field=2),
+                models.TestTrigger(int_field=20),
+                models.TestTrigger(int_field=30),
+            ]
+        )
+        print("values", values[0].int_field)
+        values[0].delete()
+        with utils.raises_trigger_error(match="Cannot delete rows"):
+            models.TestTrigger.objects.all().delete()
+
+
+@pytest.mark.django_db
+def test_readonly_statement_level():
+    """Verify readonly statement protect trigger works on test model"""
+    cond_protect = pgtrigger.ReadOnly(
+        name="composer_protect",
+        level=pgtrigger.Statement,
+        fields=["int_field"],
+    )
+
+    with cond_protect.install(models.TestTrigger):
+        models.TestTrigger.objects.bulk_create(
+            [
+                models.TestTrigger(int_field=2),
+                models.TestTrigger(int_field=20),
+                models.TestTrigger(int_field=30),
+            ]
+        )
+        with utils.raises_trigger_error(match="Cannot update rows"):
+            models.TestTrigger.objects.update(int_field=101)
+
+
+@pytest.mark.django_db
 def test_custom_db_table_protect_trigger():
     """Verify custom DB table names have successful triggers"""
     deletion_protected_model = ddf.G(models.CustomTableName)
     with utils.raises_trigger_error(match="Cannot delete rows"):
         deletion_protected_model.delete()
+
+
+@pytest.mark.django_db
+def test_composer_protect():
+    """Verify composer trigger with protection-like trigger."""
+
+    # Test a simple protection trigger that loops through conditional rows
+    composer_raise = pgtrigger.Composer(
+        name="composer_protect",
+        when=pgtrigger.After,
+        operation=pgtrigger.Insert,
+        level=pgtrigger.Statement,
+        declare=[("val", "RECORD")],
+        func=pgtrigger.Func(
+            """
+            FOR val IN SELECT * FROM {cond_new_values}
+            LOOP
+            RAISE EXCEPTION 'hit condition';
+            END LOOP;
+            RETURN NULL;
+            """
+        ),
+        condition=pgtrigger.Q(new__int_field__gt=0),
+    )
+
+    with composer_raise.install(models.TestTrigger):
+        ddf.G(models.TestTrigger, int_field=0)
+        with utils.raises_trigger_error(match="hit condition"):
+            models.TestTrigger.objects.create(int_field=2)
+
+
+@pytest.mark.django_db
+def test_composer_protect_no_condition():
+    """Verify composer trigger with protection-like trigger."""
+
+    # Test a simple protection trigger that loops through conditional rows
+    composer_raise = pgtrigger.Composer(
+        name="composer_protect",
+        when=pgtrigger.After,
+        operation=pgtrigger.Insert,
+        level=pgtrigger.Statement,
+        declare=[("val", "RECORD")],
+        func=pgtrigger.Func(
+            """
+            FOR val IN SELECT * FROM {cond_new_values}
+            LOOP
+            RAISE EXCEPTION 'hit condition';
+            END LOOP;
+            RETURN NULL;
+            """
+        ),
+    )
+
+    with composer_raise.install(models.TestTrigger):
+        with utils.raises_trigger_error(match="hit condition"):
+            models.TestTrigger.objects.create(int_field=2)
+
+
+@pytest.mark.django_db
+def test_composer_protect_custom_condition():
+    """Verify composer trigger with a custom protection-like condition."""
+
+    composer_raise = pgtrigger.Composer(
+        name="composer_protect_update",
+        when=pgtrigger.After,
+        operation=pgtrigger.Update,
+        level=pgtrigger.Statement,
+        declare=[("val", "RECORD")],
+        func=pgtrigger.Func(
+            """
+            FOR val IN SELECT * FROM {cond_new_values}
+            LOOP
+            RAISE EXCEPTION 'hit condition';
+            END LOOP;
+            RETURN NULL;
+            """
+        ),
+        condition=pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
+    )
+
+    with composer_raise.install(models.TestTrigger):
+        ddf.G(models.TestTrigger, int_field=0, n=5)
+        # A redundant update should not trigger
+        models.TestTrigger.objects.update(int_field=0)
+
+        with utils.raises_trigger_error(match="hit condition"):
+            models.TestTrigger.objects.update(int_field=2)
+
+
+@pytest.mark.django_db
+def test_composer_log():
+    """Verify composer trigger works on test model"""
+    composer_log = pgtrigger.Composer(
+        name="composer_log",
+        when=pgtrigger.After,
+        operation=pgtrigger.Update,
+        level=pgtrigger.Statement,
+        declare=[("val", "RECORD")],
+        func=pgtrigger.Func(
+            f"""
+            INSERT INTO {models.TestTrigger._meta.db_table} (field, int_field, dt_field)
+            SELECT new_values.field, new_values.int_field, old_values.dt_field
+            FROM {{cond_joined_values}};
+            RETURN NULL;
+            """
+        ),
+        condition=pgtrigger.Q(new__int_field__gt=0, old__int_field__lte=100),
+    )
+
+    with composer_log.install(models.TestTrigger):
+        assert models.TestTrigger.objects.count() == 0
+        ddf.G(models.TestTrigger, int_field=0, field="a", dt_field=dt.datetime(2015, 1, 1), n=5)
+        assert models.TestTrigger.objects.count() == 5
+
+        # The conditional statement trigger should not fire
+        models.TestTrigger.objects.update(int_field=-1)
+        assert models.TestTrigger.objects.count() == 5
+
+        # The condition will fire this time, creating 5 new rows
+        models.TestTrigger.objects.update(
+            int_field=101, dt_field=dt.datetime(2016, 1, 2), field="b"
+        )
+        assert models.TestTrigger.objects.count() == 10
+        # Verify the values of the last six rows
+        for row in models.TestTrigger.objects.order_by("id")[6:]:
+            assert row.int_field == 101
+            assert row.field == "b"
+            assert row.dt_field == dt.datetime(2015, 1, 1)
+
+        # Updating should not trigger
+        models.TestTrigger.objects.update(int_field=1)
+        assert models.TestTrigger.objects.count() == 10
+
+        # Do a bulk update with different values
+        test_triggers = list(models.TestTrigger.objects.order_by("id"))
+        # These five should not trigger
+        for val in test_triggers[:5]:
+            val.int_field = 0
+
+        pgbulk.update(models.TestTrigger, test_triggers)
+        assert models.TestTrigger.objects.count() == 15
+
+
+@pytest.mark.parametrize(
+    "operation, expected",
+    [
+        (pgtrigger.Insert, pgtrigger.Referencing(new="new_values")),
+        (pgtrigger.Truncate, None),
+        (pgtrigger.UpdateOf("field"), None),
+        (pgtrigger.UpdateOf("field") | pgtrigger.Insert, None),
+        (pgtrigger.Truncate | pgtrigger.Insert, None),
+        (pgtrigger.Update, pgtrigger.Referencing(old="old_values", new="new_values")),
+        (pgtrigger.Update | pgtrigger.Insert, None),
+        (pgtrigger.Update | pgtrigger.Delete, None),
+        (pgtrigger.Update | pgtrigger.Insert | pgtrigger.Delete, None),
+        (pgtrigger.Delete, pgtrigger.Referencing(old="old_values")),
+    ],
+)
+def test_composer_referencing(operation, expected):
+    """Verify Composer trigger referencing."""
+    composer = pgtrigger.Composer(
+        name="composer_referencing",
+        level=pgtrigger.Statement,
+        when=pgtrigger.After,
+        operation=operation,
+    )
+    assert composer.referencing == expected
+
+
+@pytest.mark.parametrize(
+    "condition, expected",
+    [
+        (None, 'old_values JOIN new_values ON (old_values."id") = (new_values."id")'),
+        (
+            pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (new_values.* IS DISTINCT FROM old_values.*)',  # noqa
+        ),
+        (
+            pgtrigger.Q(new__int_field__gt=1, old__int_field__lte=100),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (new_values."int_field" > 1 AND old_values."int_field" <= 100)',  # noqa
+        ),
+    ],
+)
+def test_composer_get_func_template_kwargs_cond_joined_values(condition, expected):
+    """Verify Composer trigger get_func_template_kwargs for the cond_joined_values property."""
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            condition=condition,
+            func=pgtrigger.Func("RETURN NULL;"),
+        )
+        .get_func_template_kwargs(models.TestTrigger)["cond_joined_values"]
+        .strip()
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "condition, expected",
+    [
+        (None, "old_values"),
+        (
+            pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (new_values.* IS DISTINCT FROM old_values.*)',  # noqa
+        ),
+        (
+            pgtrigger.Q(old__int_field__gt=1),
+            'old_values WHERE (old_values."int_field" > 1)',
+        ),
+        (
+            pgtrigger.Q(old__int_field__gt=1) | pgtrigger.Q(new__int_field__lte=100),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (old_values."int_field" > 1 OR new_values."int_field" <= 100)',  # noqa
+        ),
+    ],
+)
+def test_composer_get_func_template_kwargs_cond_old_values(condition, expected):
+    """Verify Composer trigger get_func_template_kwargs for the cond_old_values property."""
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            condition=condition,
+            func=pgtrigger.Func("RETURN NULL;"),
+        )
+        .get_func_template_kwargs(models.TestTrigger)["cond_old_values"]
+        .strip()
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    "condition, expected",
+    [
+        (None, "new_values"),
+        (
+            pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (new_values.* IS DISTINCT FROM old_values.*)',  # noqa
+        ),
+        (
+            pgtrigger.Q(new__int_field__gt=1),
+            'new_values WHERE (new_values."int_field" > 1)',
+        ),
+        (
+            pgtrigger.Q(old__int_field__gt=1),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (old_values."int_field" > 1)',  # noqa
+        ),
+        (
+            pgtrigger.Q(old__int_field__gt=1) | pgtrigger.Q(new__int_field__lte=100),
+            'old_values JOIN new_values ON (old_values."id") = (new_values."id") WHERE (old_values."int_field" > 1 OR new_values."int_field" <= 100)',  # noqa
+        ),
+    ],
+)
+def test_composer_get_func_template_kwargs_cond_new_values(condition, expected):
+    """Verify Composer trigger get_func_template_kwargs for the cond_new_values property."""
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            condition=condition,
+            func=pgtrigger.Func("RETURN NULL;"),
+        )
+        .get_func_template_kwargs(models.TestTrigger)["cond_new_values"]
+        .strip()
+        == expected
+    )
+
+
+def test_composer_properties():
+    """Verify Composer trigger properties."""
+    with pytest.raises(ValueError, match="referencing"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            referencing=pgtrigger.Referencing(new="new_values"),
+        )
+
+    func = pgtrigger.Func("RETURN NULL;")
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            func={
+                pgtrigger.Statement: func,
+            },
+        ).get_func(models.TestTrigger)
+        == func
+    )
+    assert (
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Row,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update,
+            func={
+                pgtrigger.Row: func,
+            },
+        ).get_func(models.TestTrigger)
+        == func
+    )
+
+    # Verify we can't render the func if it references a non-existent transition table
+    with pytest.raises(ValueError, match="references OLD"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Insert,
+            func="SELECT * FROM old_values.*",
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references OLD"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Insert,
+            func="SELECT * FROM old_values.*",
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references NEW"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Insert,
+            func=pgtrigger.Func("SELECT * FROM {cond_old_values}"),
+            condition=pgtrigger.AnyChange(),
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references NEW"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Delete,
+            func="SELECT * FROM new_values.*",
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references NEW"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Delete,
+            func="SELECT * FROM new_values.*",
+        ).render_func(models.TestTrigger)
+
+    with pytest.raises(ValueError, match="references NEW"):
+        pgtrigger.Composer(
+            name="composer_values_properties",
+            level=pgtrigger.Statement,
+            when=pgtrigger.After,
+            operation=pgtrigger.Update | pgtrigger.Delete,
+            func=pgtrigger.Func("SELECT * FROM {cond_new_values}"),
+            condition=pgtrigger.AnyChange(),
+        ).render_func(models.TestTrigger)

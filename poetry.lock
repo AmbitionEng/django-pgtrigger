@@ -659,6 +659,20 @@ files = [
 ]
 
 [[package]]
+name = "django-pgbulk"
+version = "3.2.2"
+description = "Native Postgres update, upsert, and copy operations."
+optional = false
+python-versions = "<4,>=3.9.0"
+files = [
+    {file = "django_pgbulk-3.2.2-py3-none-any.whl", hash = "sha256:73a66f4436da70af98daa3ee2de4ebb9acfa050c392681ed053055180784d595"},
+    {file = "django_pgbulk-3.2.2.tar.gz", hash = "sha256:bdc97cedba1a02734c9609cdf80296a1022ce9a6a497d4e8f3b25170768d945e"},
+]
+
+[package.dependencies]
+django = ">=4"
+
+[[package]]
 name = "django-postgres-extra"
 version = "2.0.4"
 description = "Bringing all of PostgreSQL's awesomeness to Django."
@@ -2568,4 +2582,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9.0,<4"
-content-hash = "f3adac9149ea5210b472f15b2b7aaf326b80c2a21617a965363431d1c28eb6f8"
+content-hash = "3d4f1308f92c69a1a91e0d1962517437dfe523c8527e8e06830d9d0a677f76a0"

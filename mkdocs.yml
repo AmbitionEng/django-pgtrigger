@@ -84,14 +84,16 @@ extra_css:
 nav:
   - Overview: index.md
   - Installation: installation.md
-  - Usage Guides:
+  - Getting Started:
       - Basics: basics.md
       - Trigger Cookbook: cookbook.md
       - Conditional Triggers: conditional.md
       - Ignoring Execution: ignoring_triggers.md
+  - Advanced Functionality:
+      - Statement-Level Triggers: statement.md
       - Deferrable Triggers: deferrable.md
-      - Advanced Installation: advanced_installation.md
-      - Advanced Database Setups: advanced_db.md
+      - Installation Edge Cases: advanced_installation.md
+      - Non-Standard Database Setups: advanced_db.md
   - Help:
       - Frequently Asked Questions: faq.md
       - Troubleshooting: troubleshooting.md

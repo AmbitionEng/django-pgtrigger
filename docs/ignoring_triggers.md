@@ -1,5 +1,7 @@
 # Ignoring Execution
 
+## Overview
+
 [pgtrigger.ignore][] is a decorator and context manager that temporarily ignores triggers for a single
 thread of execution. Here we ignore deletion protection:
 

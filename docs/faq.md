@@ -59,6 +59,4 @@ Open a [discussion](https://github.com/Opus10/django-pgtrigger/discussions) for 
 
 For bugs, open an [issue](https://github.com/Opus10/django-pgtrigger/issues).
 
-## How can I support the author?
 
-By sponsoring [Wes Kendall](https://github.com/sponsors/wesleykendall). Even the smallest sponsorships are a nice motivation to maintain and enhance Opus10 libraries like django-pgtrigger.
