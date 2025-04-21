@@ -5,6 +5,7 @@
 #### Improvements
 
   - Added the `pgtrigger.Composer` trigger utility for writing conditional statement-level triggers by [@wesleykendall](https://github.com/wesleykendall) in [#204](https://github.com/AmbitionEng/django-pgtrigger/pull/204).
+  - Provide statement-level versions of `pgtrigger.Protect` and `pgtrigger.ReadOnly` by [@wesleykendall](https://github.com/wesleykendall) in [#204](https://github.com/AmbitionEng/django-pgtrigger/pull/205).
 
 ## 4.14.0 (2025-04-18)
 
