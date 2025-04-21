@@ -121,6 +121,9 @@ class Operation(_Primitive):
         assert isinstance(other, Operation)
         return Operations(self, other)
 
+    def __contains__(self, other):
+        return self == other
+
 
 class Operations(Operation):
     """For providing multiple operations `OR`ed together.
@@ -136,6 +139,9 @@ class Operations(Operation):
 
     def __str__(self):
         return " OR ".join(str(operation) for operation in self.operations)
+
+    def __contains__(self, other):
+        return other in self.operations
 
 
 Update = Operation("UPDATE")

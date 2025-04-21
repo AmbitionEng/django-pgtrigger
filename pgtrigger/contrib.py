@@ -359,6 +359,115 @@ def get_cond_values_func_template_kwargs(
     return cond_kwargs
 
 
+class Composer(core.Trigger):
+    """A trigger that can work as a statement or row level trigger.
+
+    Automatically includes proper transition tables for statement-level triggers
+    based on the operation. If using a condition, provides utility variables
+    for accessing filtered transition tables.
+    """
+
+    func: dict[core.Level, core.Func | str] | core.Func | str | None = None  # type: ignore
+
+    def __init__(self, **kwargs: Any):
+        super().__init__(**kwargs)
+        assert self.operation is not None
+
+        if self.referencing is not None:
+            raise ValueError("Composer triggers do not support referencing declarations.")
+
+        # Make old/new rows available based on the operation or combination of operations
+        if (
+            self.level == core.Statement
+            and core.UpdateOf not in self.operation
+            and core.Truncate not in self.operation
+        ):
+            if core.Insert in self.operation and core.Delete not in self.operation:
+                self.referencing = core.Referencing(new="new_values")
+            elif core.Delete in self.operation and core.Insert not in self.operation:
+                self.referencing = core.Referencing(old="old_values")
+            elif (
+                core.Update in self.operation
+                and core.Delete not in self.operation
+                and core.Insert not in self.operation
+            ):
+                self.referencing = core.Referencing(old="old_values", new="new_values")
+
+    def get_func(self, model: models.Model) -> Union[str, core.Func]:
+        """Allow a dict of funcs for statement/row level triggers."""
+        if isinstance(self.func, dict):
+            if self.level == core.Statement:
+                return self.func[core.Statement]
+            else:
+                return self.func[core.Row]
+        else:
+            return super().get_func(model)
+
+    def render_condition(self, model: models.Model) -> str:
+        """Ignore condition rendering in a statement level trigger and provide utils."""
+        return "" if self.level == core.Statement else super().render_condition(model)
+
+    def get_func_template_kwargs(self, model: models.Model) -> dict[str, Any]:
+        """
+        Provides cond_from, cond_new_values, and cond_old_values variables to the
+        function template.
+        """
+        func_template_kwargs = super().get_func_template_kwargs(model)
+
+        if self.level == core.Statement:
+            condition = super().render_condition(model)
+
+            condition = condition.replace("OLD.", "old_values.").replace("NEW.", "new_values.")
+            if condition.startswith("WHEN "):
+                condition = f"WHERE {condition[5:]}"
+
+            pk_columns = _get_columns(model, model._meta.pk)
+            old_pk_cols = ", ".join(f'old_values."{col}"' for col in pk_columns)
+            new_pk_cols = ", ".join(f'new_values."{col}"' for col in pk_columns)
+            cond_joined_values = (
+                f"old_values JOIN new_values ON ({old_pk_cols}) = ({new_pk_cols}) {condition}"
+            )
+
+            if "new_values." in condition:
+                cond_old_values = cond_joined_values
+                cond_new_values = f"new_values {condition}"
+            else:
+                cond_old_values = f"old_values {condition}"
+                cond_new_values = cond_joined_values
+
+            func_template_kwargs |= {
+                "cond_joined_values": cond_joined_values,
+                "cond_old_values": cond_old_values,
+                "cond_new_values": cond_new_values,
+                "select_cond_joined_values": f"SELECT * FROM {cond_joined_values}",
+                "select_cond_old_values": f"SELECT * FROM {cond_old_values}",
+                "select_cond_new_values": f"SELECT * FROM {cond_new_values}",
+            }
+
+        return func_template_kwargs
+
+    def render_func(self, model: models.Model) -> str:
+        rendered = super().render_func(model)
+
+        # Check if the function references OLD or NEW values when it shouldn't
+        if self.level == core.Statement:
+            references_old = self.referencing and self.referencing.old
+            references_new = self.referencing and self.referencing.new
+
+            if "new_values." in rendered and not references_new:
+                raise ValueError(
+                    f'Composer trigger references NEW values, but operation "{self.operation}"'
+                    " doesn't allow for that."
+                )
+            elif "old_values." in rendered and not references_old:
+                raise ValueError(
+                    f'Composer trigger references OLD values, but operation "{self.operation}"'
+                    " doesn't allow for that."
+                )
+
+        return rendered
+
+
 class CondValues(core.Trigger):
     """
     A statement-level trigger that simulates a conditional row-level trigger.
