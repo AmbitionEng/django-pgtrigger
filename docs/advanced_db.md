@@ -1,6 +1,6 @@
-# Advanced Database Setups
+# Non-Standard Database Setups
 
-Here we cover details about more advanced database setups that might impact how you use triggers.
+Here we cover details about non-standard database setups that might impact how you use triggers.
 
 ## Multiple Databases
 

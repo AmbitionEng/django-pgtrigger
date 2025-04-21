@@ -43,6 +43,8 @@ class Composer(core.Trigger):
     Automatically includes proper transition tables for statement-level triggers
     based on the operation. If using a condition, provides utility variables
     for accessing filtered transition tables.
+
+    See [the statement-level trigger section](./statement.md) for more information.
     """
 
     func: dict[core.Level, core.Func | str] | core.Func | str | None = None  # type: ignore
@@ -82,12 +84,12 @@ class Composer(core.Trigger):
             return super().get_func(model)
 
     def render_condition(self, model: models.Model) -> str:
-        """Ignore condition rendering in a statement level trigger and provide utils."""
+        """Ignore condition rendering in a statement level trigger."""
         return "" if self.level == core.Statement else super().render_condition(model)
 
     def get_func_template_kwargs(self, model: models.Model) -> dict[str, Any]:
         """
-        Provides cond_from, cond_new_values, and cond_old_values variables to the
+        Provides `cond_joined_values`, `cond_old_values`, and `cond_new_values` variables to the
         function template.
         """
         func_template_kwargs = super().get_func_template_kwargs(model)

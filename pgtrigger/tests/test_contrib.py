@@ -228,7 +228,7 @@ def test_protect():
 def test_protect_statement_level_insert_update():
     """Verify insert/update protect trigger works on test model"""
     cond_protect = pgtrigger.Protect(
-        name="cond_values_protect",
+        name="composer_protect",
         operation=pgtrigger.Insert,
         level=pgtrigger.Statement,
         condition=pgtrigger.Q(new__int_field__gt=100),
@@ -251,7 +251,7 @@ def test_protect_statement_level_insert_update():
             )
 
     cond_protect = pgtrigger.Protect(
-        name="cond_values_protect",
+        name="composer_protect",
         operation=pgtrigger.Update,
         level=pgtrigger.Statement,
         condition=pgtrigger.Q(new__int_field__gt=100, old__int_field__lte=100),
@@ -274,7 +274,7 @@ def test_protect_statement_level_insert_update():
 def test_protect_statement_level_delete():
     """Verify deletion protect trigger works on test model"""
     cond_protect = pgtrigger.Protect(
-        name="cond_values_protect",
+        name="composer_protect",
         operation=pgtrigger.Delete,
         level=pgtrigger.Statement,
         condition=pgtrigger.Q(old__int_field__gt=20),
@@ -301,7 +301,7 @@ def test_protect_statement_level_delete():
 def test_readonly_statement_level():
     """Verify readonly statement protect trigger works on test model"""
     cond_protect = pgtrigger.ReadOnly(
-        name="cond_values_protect",
+        name="composer_protect",
         level=pgtrigger.Statement,
         fields=["int_field"],
     )
@@ -331,8 +331,8 @@ def test_composer_protect():
     """Verify composer trigger with protection-like trigger."""
 
     # Test a simple protection trigger that loops through conditional rows
-    cond_values_raise = pgtrigger.Composer(
-        name="cond_values_protect",
+    composer_raise = pgtrigger.Composer(
+        name="composer_protect",
         when=pgtrigger.After,
         operation=pgtrigger.Insert,
         level=pgtrigger.Statement,
@@ -349,7 +349,7 @@ def test_composer_protect():
         condition=pgtrigger.Q(new__int_field__gt=0),
     )
 
-    with cond_values_raise.install(models.TestTrigger):
+    with composer_raise.install(models.TestTrigger):
         ddf.G(models.TestTrigger, int_field=0)
         with utils.raises_trigger_error(match="hit condition"):
             models.TestTrigger.objects.create(int_field=2)
@@ -357,11 +357,11 @@ def test_composer_protect():
 
 @pytest.mark.django_db
 def test_composer_protect_no_condition():
-    """Verify cond_values trigger with protection-like trigger."""
+    """Verify composer trigger with protection-like trigger."""
 
     # Test a simple protection trigger that loops through conditional rows
-    cond_values_raise = pgtrigger.Composer(
-        name="cond_values_protect",
+    composer_raise = pgtrigger.Composer(
+        name="composer_protect",
         when=pgtrigger.After,
         operation=pgtrigger.Insert,
         level=pgtrigger.Statement,
@@ -377,7 +377,7 @@ def test_composer_protect_no_condition():
         ),
     )
 
-    with cond_values_raise.install(models.TestTrigger):
+    with composer_raise.install(models.TestTrigger):
         with utils.raises_trigger_error(match="hit condition"):
             models.TestTrigger.objects.create(int_field=2)
 
@@ -386,8 +386,8 @@ def test_composer_protect_no_condition():
 def test_composer_protect_custom_condition():
     """Verify composer trigger with a custom protection-like condition."""
 
-    cond_values_raise = pgtrigger.Composer(
-        name="cond_values_protect_update",
+    composer_raise = pgtrigger.Composer(
+        name="composer_protect_update",
         when=pgtrigger.After,
         operation=pgtrigger.Update,
         level=pgtrigger.Statement,
@@ -404,7 +404,7 @@ def test_composer_protect_custom_condition():
         condition=pgtrigger.Condition("NEW.* IS DISTINCT FROM OLD.*"),
     )
 
-    with cond_values_raise.install(models.TestTrigger):
+    with composer_raise.install(models.TestTrigger):
         ddf.G(models.TestTrigger, int_field=0, n=5)
         # A redundant update should not trigger
         models.TestTrigger.objects.update(int_field=0)
@@ -416,8 +416,8 @@ def test_composer_protect_custom_condition():
 @pytest.mark.django_db
 def test_composer_log():
     """Verify composer trigger works on test model"""
-    cond_values_log = pgtrigger.Composer(
-        name="cond_values_log",
+    composer_log = pgtrigger.Composer(
+        name="composer_log",
         when=pgtrigger.After,
         operation=pgtrigger.Update,
         level=pgtrigger.Statement,
@@ -433,7 +433,7 @@ def test_composer_log():
         condition=pgtrigger.Q(new__int_field__gt=0, old__int_field__lte=100),
     )
 
-    with cond_values_log.install(models.TestTrigger):
+    with composer_log.install(models.TestTrigger):
         assert models.TestTrigger.objects.count() == 0
         ddf.G(models.TestTrigger, int_field=0, field="a", dt_field=dt.datetime(2015, 1, 1), n=5)
         assert models.TestTrigger.objects.count() == 5

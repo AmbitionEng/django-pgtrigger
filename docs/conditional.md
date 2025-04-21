@@ -143,6 +143,6 @@ Custom conditional logic than spans multiple tables must happen inside the funct
 
 ## Statement-Level Triggers
 
-Postgres only natively supports writing conditions on row-level triggers. `django-pgtrigger`, however, provides a [pgtrigger.CondValues][] trigger that can aid in writing conditional statement-level triggers.
+Postgres only natively supports writing conditions on row-level triggers. `django-pgtrigger`, however, provides a [pgtrigger.Composer][] trigger that can aid in writing conditional statement-level triggers.
 
-See [the examples in the cookbook for more information](./cookbook.md#cond_values).
+See [the examples in the statement-level trigger section for more information](./statement.md).
