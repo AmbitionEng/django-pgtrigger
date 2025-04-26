@@ -372,6 +372,14 @@ class Q(models.Q, Condition):
 
 
 def _normalize_fields(model: type[models.Model], fields: list[str]) -> Generator[str, None, None]:
+    """Normalize and validate fields.
+
+    Fields such as "my_foreign_key_id" will be normalized to the name on the model, such
+    as "my_foreign_key".
+
+    Fields such as M2Ms and concrete parents are not allowed in triggers, so they raised
+    errors here.
+    """
     fields = [model._meta.get_field(field).name for field in fields]
 
     for field in fields:
