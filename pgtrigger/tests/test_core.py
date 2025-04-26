@@ -690,6 +690,9 @@ def test_changed_condition_bad_field():
     # Abstract inheritance should work
     pgtrigger.AnyChange("field").resolve(models.AbstractChild)
 
+    # Referencing foreign key IDs should work
+    pgtrigger.AnyChange("fk_field_id").resolve(models.ChangedCondition)
+
 
 @pytest.mark.django_db(databases=["default", "other"], transaction=True)
 @pytest.mark.order(-2)  # This is a leaky test that modifies the schema. Always run last
