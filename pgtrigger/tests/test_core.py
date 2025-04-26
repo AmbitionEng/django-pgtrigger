@@ -3,6 +3,7 @@ import datetime as dt
 import ddf
 import pytest
 from django.contrib.auth.models import User
+from django.core.exceptions import FieldDoesNotExist
 from django.db import transaction
 from django.db.utils import NotSupportedError
 
@@ -674,14 +675,20 @@ def test_changed_condition(condition, expected_sql):
 
 def test_changed_condition_bad_field():
     """Verifies incorrect fields aren't allowed in changed conditions"""
-    with pytest.raises(ValueError, match="not found on model"):
+    with pytest.raises(FieldDoesNotExist, match="has no field"):
         pgtrigger.AnyChange("bad_field").resolve(models.ChangedCondition)
 
-    with pytest.raises(ValueError, match="not found on model"):
+    with pytest.raises(ValueError, match="many-to-many field"):
         pgtrigger.AnyChange("m2m_field").resolve(models.ChangedCondition)
 
-    with pytest.raises(ValueError, match="not found on model"):
+    with pytest.raises(FieldDoesNotExist, match="has no field"):
         pgtrigger.AnyChange(exclude=["bad_field"]).resolve(models.ChangedCondition)
+
+    with pytest.raises(ValueError, match="concrete parent"):
+        pgtrigger.AnyChange("field").resolve(models.ConcreteChild)
+
+    # Abstract inheritance should work
+    pgtrigger.AnyChange("field").resolve(models.AbstractChild)
 
 
 @pytest.mark.django_db(databases=["default", "other"], transaction=True)

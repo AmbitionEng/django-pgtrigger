@@ -6,7 +6,7 @@ import functools
 import hashlib
 import operator
 import re
-from typing import TYPE_CHECKING, Any, List, Tuple, Union
+from typing import TYPE_CHECKING, Any, Generator, List, Tuple, Union
 
 from django.db import DEFAULT_DB_ALIAS, models, router, transaction
 from django.db.models.expressions import Col
@@ -371,6 +371,22 @@ class Q(models.Q, Condition):
         def __invert__(self) -> Self: ...
 
 
+def _normalize_fields(model: type[models.Model], fields: list[str]) -> Generator[str, None, None]:
+    fields = [model._meta.get_field(field).name for field in fields]
+
+    for field in fields:
+        dj_field = model._meta.get_field(field)
+        if hasattr(dj_field, "m2m_db_table"):
+            raise ValueError(f'Cannot filter on many-to-many field "{field}".')
+        elif dj_field.model != model:
+            raise ValueError(
+                f'Cannot filter on field "{field}" of concrete parent model'
+                f' "{dj_field.model.__name__}".'
+            )
+
+        yield dj_field.name
+
+
 class _Change(Condition):
     """For specifying a condition based on changes to fields.
 
@@ -402,18 +418,16 @@ class _Change(Condition):
         return inverted
 
     def resolve(self, model: type[models.Model]) -> str:
+        fields = list(_normalize_fields(model, self.fields))
+        exclude = set(_normalize_fields(model, self.exclude))
         model_fields = {f.name for f in model._meta.fields}
-        for field in self.fields + self.exclude:
-            if field not in model_fields:
-                raise ValueError(f'Field "{field}" not found on model "{model}"')
 
-        exclude = set(self.exclude)
         if self.exclude_auto:
             for f in model._meta.fields:
                 if getattr(f, "auto_now", False) or getattr(f, "auto_now_add", False):
                     exclude.add(f.name)
 
-        fields = sorted(f for f in (self.fields or model_fields) if f not in exclude)
+        fields = sorted(f for f in (fields or model_fields) if f not in exclude)
 
         if set(fields) == model_fields and not self.all:
             if self.comparison == "df":
