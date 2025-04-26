@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.15.1 (2025-04-25)
+
+#### Fixes
+
+  - Allow ID fields of foreign keys to be expressed in pgtrigger conditions by [@wesleykendall](https://github.com/wesleykendall) in [#206](https://github.com/AmbitionEng/django-pgtrigger/pull/206).
+
 ## 4.15.0 (2025-04-20)
 
 #### Improvements
