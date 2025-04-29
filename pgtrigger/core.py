@@ -377,7 +377,7 @@ def _normalize_fields(model: type[models.Model], fields: list[str]) -> Generator
     Fields such as "my_foreign_key_id" will be normalized to the name on the model, such
     as "my_foreign_key".
 
-    Fields such as M2Ms and concrete parents are not allowed in triggers, so they raised
+    Fields such as M2Ms are not allowed in triggers, so they raised
     errors here.
     """
     fields = [model._meta.get_field(field).name for field in fields]
@@ -386,11 +386,6 @@ def _normalize_fields(model: type[models.Model], fields: list[str]) -> Generator
         dj_field = model._meta.get_field(field)
         if hasattr(dj_field, "m2m_db_table"):
             raise ValueError(f'Cannot filter on many-to-many field "{field}".')
-        elif dj_field.model != model:
-            raise ValueError(
-                f'Cannot filter on field "{field}" of concrete parent model'
-                f' "{dj_field.model.__name__}".'
-            )
 
         yield dj_field.name
 
