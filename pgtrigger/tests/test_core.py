@@ -684,9 +684,6 @@ def test_changed_condition_bad_field():
     with pytest.raises(FieldDoesNotExist, match="has no field"):
         pgtrigger.AnyChange(exclude=["bad_field"]).resolve(models.ChangedCondition)
 
-    with pytest.raises(ValueError, match="concrete parent"):
-        pgtrigger.AnyChange("field").resolve(models.ConcreteChild)
-
     # Abstract inheritance should work
     pgtrigger.AnyChange("field").resolve(models.AbstractChild)
 

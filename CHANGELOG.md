@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.15.2 (2025-04-29)
+
+#### Fixes
+
+  - Remove incorrect validation for using concretely-inherited fields in trigger conditions by [@wesleykendall](https://github.com/wesleykendall) in [#208](https://github.com/AmbitionEng/django-pgtrigger/pull/208).
+
 ## 4.15.1 (2025-04-25)
 
 #### Fixes
