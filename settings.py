@@ -10,6 +10,7 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.postgres",
+    "django.contrib.gis",
     "psqlextra",
     "pgtrigger.tests",
     "pgtrigger.tests.syncdb_app",
@@ -20,6 +21,11 @@ INSTALLED_APPS = [
 DATABASES = {
     "default": dj_database_url.config(),
     "sqlite": {"ENGINE": "django.db.backends.sqlite3", "NAME": "test_sqlite"},
+    "geo": {
+        "ENGINE": "django.contrib.gis.db.backends.postgis",
+        "NAME": "test_geo",
+        "EXTENSIONS": ["postgis"],
+    },
 }
 
 DATABASES["other"] = copy.deepcopy(DATABASES["default"])

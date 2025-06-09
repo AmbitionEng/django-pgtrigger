@@ -1,5 +1,6 @@
 import django
 from django.contrib.auth.models import User
+from django.contrib.gis.db import models as geo_models
 from django.contrib.postgres.search import SearchVectorField
 from django.db import connections, models
 from django.utils import timezone
@@ -28,8 +29,10 @@ class Router:
         pg_maj_version = _get_pg_maj_version(db)
 
         if model_name == "partitionmodel" and (
-            db in ("sqlite", "other") or not pg_maj_version or pg_maj_version < 13
+            db in ("sqlite", "other", "geo") or not pg_maj_version or pg_maj_version < 13
         ):
+            return False
+        elif model_name == "profile" and db != "geo":
             return False
 
 
@@ -300,3 +303,9 @@ class AbstractChangedCondition(models.Model):
 
 class AbstractChild(AbstractChangedCondition):
     child_field = models.CharField(max_length=16)
+
+
+class Profile(geo_models.Model):
+    """For testing triggers on Geo fields"""
+
+    geo_point = geo_models.PointField(blank=True, null=True)

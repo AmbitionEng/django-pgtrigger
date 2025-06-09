@@ -3,6 +3,7 @@ import datetime as dt
 import ddf
 import pytest
 from django.contrib.auth.models import User
+from django.contrib.gis.geos import Point
 from django.core.exceptions import FieldDoesNotExist
 from django.db import transaction
 from django.db.utils import NotSupportedError
@@ -108,6 +109,25 @@ def test_statement_row_level_logging():
 
     # A duplicate update shouldn't fire any more row-level log entries
     assert models.LogEntry.objects.filter(level="ROW").count() == 5
+
+
+@pytest.mark.django_db(databases=["default", "geo"])
+def test_geo_point_condition_trigger():
+    """
+    Tests a trigger on a GeoPointField
+    """
+    # Make the LogEntry model a soft delete model where
+    # "level" is set to "inactive"
+    trigger = pgtrigger.Protect(
+        name="protect_geo_point_field",
+        when=pgtrigger.Before,
+        operation=pgtrigger.Update,
+        condition=pgtrigger.Q(old__geo_point__df=pgtrigger.F("new__geo_point")),
+    )
+    with trigger.register(models.Profile), trigger.install(models.Profile, database="geo"):
+        obj = models.Profile.objects.using("geo").create(geo_point=Point(1, 1))
+        obj.geo_point = Point(2, 2)
+        obj.save(using="geo")
 
 
 @pytest.mark.django_db(transaction=True)

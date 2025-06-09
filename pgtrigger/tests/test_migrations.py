@@ -76,7 +76,7 @@ def assert_all_triggers_installed():
 
 
 @pytest.mark.django_db(
-    databases=["default", "other", "receipt", "order", "sqlite"], transaction=True
+    databases=["default", "other", "receipt", "order", "sqlite", "geo"], transaction=True
 )
 @pytest.mark.usefixtures("reset_triggers", "reset_migrations")
 @pytest.mark.order(-1)  # This is a possibly leaky test if it fails midway. Always run last

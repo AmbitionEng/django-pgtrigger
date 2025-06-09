@@ -6,6 +6,7 @@ dependencies:
   - poetry==1.8.4
   - pip==24.2
   - postgresql==17.0
+  - gdal==3.11.0
 variables:
   DATABASE_URL: "postgres://postgres@localhost:5432/pgtrigger_local"
   EXEC_WRAPPER: ""
