@@ -111,7 +111,7 @@ def test_statement_row_level_logging():
     assert models.LogEntry.objects.filter(level="ROW").count() == 5
 
 
-@pytest.mark.django_db(databases=["default", "geo"])
+@pytest.mark.django_db(transaction=True, databases=["default", "geo"])
 def test_geo_point_condition_trigger():
     """
     Tests a trigger on a GeoPointField
@@ -126,8 +126,14 @@ def test_geo_point_condition_trigger():
     )
     with trigger.register(models.Profile), trigger.install(models.Profile, database="geo"):
         obj = models.Profile.objects.using("geo").create(geo_point=Point(1, 1))
-        obj.geo_point = Point(2, 2)
+        obj.geo_point = Point(1, 1)
         obj.save(using="geo")
+
+        with transaction.atomic():
+            with utils.raises_trigger_error(match="Cannot update"):
+                obj.geo_point = Point(1, 2)
+                obj.save(using="geo")
+    
 
 
 @pytest.mark.django_db(transaction=True)
