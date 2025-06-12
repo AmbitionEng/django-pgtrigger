@@ -6,9 +6,9 @@ Statement-level triggers provide the ability to run triggers once-per statement,
 2. Statement-level triggers can only fire after an operation. They cannot alter rows in memory or cause Postgres to ignore certain operations.
 3. There is no guaranteed ordering of the old and new rows in [transition tables](https://dba.stackexchange.com/questions/177463/what-is-a-transition-table-in-postgres). In order to detect differences between old and new, we must join based on primary key. If the primary key is updated, we miss out on these changes.
 
-With these differences in mind, `django-pgtrigger` provides the [pgtrigger.Composer][] trigger to facilitate writing performant conditional statement-level triggers like row-level trigger counterparts. [pgtrigger.Composer][] also helps one express a trigger as both row- or statement-level functions, facilitating more advanced trigger definitions in both `django-pgtrigger` and third-party libraries.
+Although one can verbosely express statement-level triggers with [pgtrigger.Trigger][] classes (see [the cookbook for an example](cookbook.md#statement-level-triggers-and-transition-tables)), here we focus on [pgtrigger.Composer][], a utility class that allows one to architect row and statement-level triggers in a similar way.
 
-Here we go over the fundamentals of how [pgtrigger.Composer][] works and how it is used by some triggers provided by `django-pgtrigger`.
+We cover how this class automatically handles `REFERENCING` declarations and provides utilities for expressing conditions for statement-level triggers, bringing them more close to their row-level counterparts without the performance implications.
 
 ## Automatic references declaration
 
@@ -27,21 +27,44 @@ For example:
 
     Combinations of operations is not supported by Postgres when using transition tables, so operations like `pgtrigger.Update | pgtrigger.Delete` will result in no transition tables being declared.
 
+For example, here we write a history tracking trigger that bulk inserts old and new fields from the `old_values` and `new_values` transition tables:
+
+```python
+pgtrigger.Composer(
+    name="track_history",
+    level=pgtrigger.Statement,
+    when=pgtrigger.After,
+    operation=pgtrigger.Update,
+    func=f"""
+        INSERT INTO {HistoryModel._meta.db_table}(old_field, new_field)
+        SELECT
+            old_values.field AS old_field,
+            new_values.field AS new_field
+        FROM old_values
+            JOIN new_values ON old_values.id = new_values.id;
+        RETURN NULL;
+    """
+)
+```
+
 ## Template variables when using conditions
 
-One can use `condition` with [pgtrigger.Composer][] statement-level triggers, which provides the following template variables in [pgtrigger.Func][]:
+Conditions are not possible on statement-level trigger definitions in Postgres like row-level counterparts. Standard statement-level trigger definitions with [pgtrigger.Trigger][] and a `condition` supplied will fail.
+
+[pgtrigger.Composer][], however, handles the `condition` argument in a special manner for statement-level triggers, providing the following template variables in [pgtrigger.Func][] that help one conditionally access the transition tables:
 
 - **cond_old_values**: A fragment that has the `old_values` alias filtered by the condition.
 - **cond_new_values**: A fragment that has the `new_values` alias filtered by the condition.
 - **cond_joined_values**: A fragment that always has both `old_values` and `new_values` aliases joined and filtered by the condition.
 
-Use the minimum alias needed in your trigger to ensure best performance of generated SQL. If your trigger, for example, only needs to access conditionally-filtered olde rows, use `cond_old_values` to ensure most optimal SQL.
+Use the minimum alias needed in your trigger to ensure best performance of generated SQL. If your trigger, for example, only needs to access conditionally-filtered old rows, use `cond_old_values` to ensure most optimal SQL.
 
-Here's an example of a conditonal update trigger to walk through how this works:
+Here's an example of a conditonal statement-level update trigger:
 
 ```python
 pgtrigger.Composer(
     name="composer_protect",
+    level=pgtrigger.Statement,
     when=pgtrigger.After,
     operation=pgtrigger.Update,
     declare=[("val", "RECORD")],
@@ -76,6 +99,7 @@ Since the condition spans old and new, `{cond_new_values}` automatically joins t
 ```python
 pgtrigger.Composer(
     name="composer_protect",
+    level=pgtrigger.Statement,
     when=pgtrigger.After,
     operation=pgtrigger.Update,
     declare=[("val", "RECORD")],
@@ -115,7 +139,9 @@ Remember the following key points when using these variables:
 
 ## Statement-level `Protect` and `ReadOnly` triggers
 
-[pgtrigger.Protect][] and [pgtrigger.ReadOnly][] use [pgtrigger.Composer][], providing statement-level versions of these triggers:
+[pgtrigger.Composer][] makes it easier for trigger authors to define trigger classes that can conditionally execute for both statement and row-level execution. [django-pghistory](https://django-pghistory.readthedocs.io/), for example, uses [pgtrigger.Composer][] to enable both statement and row-level history tracking triggers.
+
+[pgtrigger.Protect][] and [pgtrigger.ReadOnly][] also use [pgtrigger.Composer][], providing statement-level versions of these triggers:
 
 ```python
 class MyModel(models.Model):

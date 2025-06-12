@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.15.3 (2025-06-12)
+
+#### Changes
+
+  - Clarify docs on statement-level triggers and how pgtrigger.Composer works by [@wesleykendall](https://github.com/wesleykendall) in [#212](https://github.com/AmbitionEng/django-pgtrigger/pull/212).
+
 ## 4.15.2 (2025-04-29)
 
 #### Fixes
