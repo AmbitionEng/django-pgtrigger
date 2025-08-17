@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.15.4 (2025-08-16)
+
+#### Fixes
+
+  - Fix use of core Django management command options (e.g. `--skip-checks`) when using `manage.py pgtrigger` by [@wesleykendall](https://github.com/wesleykendall) in [#214](https://github.com/AmbitionEng/django-pgtrigger/pull/214).
+
 ## 4.15.3 (2025-06-12)
 
 #### Changes
