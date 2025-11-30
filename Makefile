@@ -73,7 +73,7 @@ docker-start:
 # Lock dependencies
 .PHONY: lock
 lock:
-	$(EXEC_WRAPPER) poetry lock --no-update
+	$(EXEC_WRAPPER) poetry lock
 	$(EXEC_WRAPPER) poetry export --with dev --without-hashes -f requirements.txt > docs/requirements.txt
 
 
