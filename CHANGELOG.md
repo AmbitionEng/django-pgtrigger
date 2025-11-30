@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.16.0 (2025-11-30)
+
+#### Changes
+
+  - Drop Python 3.9 support, add Python 3.14 support, add Postgres 18 support, add Django 6.0 support by [@wesleykendall](https://github.com/wesleykendall) in [#216](https://github.com/AmbitionEng/django-pgtrigger/pull/216)
+
 ## 4.15.4 (2025-08-16)
 
 #### Fixes
