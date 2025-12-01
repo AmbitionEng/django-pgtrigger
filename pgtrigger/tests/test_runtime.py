@@ -285,3 +285,26 @@ def test_test_trigger_ignore_psycopg_sql_objects():
                 "INSERT INTO {table} (field, int_field, dt_field) VALUES ('misc_insert', 1, now())"
             ).format(table=Identifier("tests_testtrigger"))
         )
+
+
+@pytest.mark.django_db
+def test_is_ignored():
+    assert not pgtrigger.is_ignored("tests.TestTrigger:protect_misc_insert")
+
+    with pgtrigger.ignore("tests.TestTrigger:protect_misc_insert"):
+        assert pgtrigger.is_ignored("tests.TestTrigger:protect_misc_insert")
+
+    assert not pgtrigger.is_ignored("tests.TestTrigger:protect_misc_insert")
+
+    # Different trigger being ignored
+    with pgtrigger.ignore("tests.TestTriggerProxy:protect_delete"):
+        assert not pgtrigger.is_ignored("tests.TestTrigger:protect_misc_insert")
+
+    with pytest.raises(
+        ValueError,
+        match='Trigger URI must be in the format of "app_label.model_name:trigger_name"',
+    ):
+        pgtrigger.is_ignored("wrongformat")
+
+    with pytest.raises(KeyError, match='URI "doesnot:exist" not found in pgtrigger registry'):
+        pgtrigger.is_ignored("doesnot:exist")

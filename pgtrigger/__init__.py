@@ -54,6 +54,7 @@ from pgtrigger.registry import (
 from pgtrigger.runtime import (
     constraints,
     ignore,
+    is_ignored,
     schema,
 )
 from pgtrigger.version import __version__
@@ -82,6 +83,7 @@ __all__ = [
     "FSM",
     "Func",
     "ignore",
+    "is_ignored",
     "Immediate",
     "Insert",
     "install",
