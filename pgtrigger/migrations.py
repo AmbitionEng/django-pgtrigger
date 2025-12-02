@@ -116,6 +116,23 @@ class AddTrigger(TriggerOperationMixin, IndexOperation):
             },
         )
 
+    def reduce(self, operation: Operation, app_label: str) -> bool | list[Operation]:
+        if (
+            # If a matching RemoveTrigger is found later on, remove both
+            isinstance(operation, RemoveTrigger)
+            and operation.model_name == self.model_name
+            and operation.name == self.trigger.name
+        ):
+            return []
+
+        elif isinstance(operation, AddTrigger) and (
+            operation.model_name != self.model_name or operation.trigger.name != self.trigger.name
+        ):
+            # Allow reducing across the other AddTrigger down the list, unless it's a duplicate
+            return True
+
+        return super().reduce(operation, app_label)
+
     @property
     def migration_name_fragment(self) -> str:
         assert self.trigger.name is not None
@@ -186,6 +203,9 @@ class RemoveTrigger(TriggerOperationMixin, IndexOperation):
                 "name": self.name,
             },
         )
+
+    def reduce(self, operation: Operation, app_label: str) -> bool | list[Operation]:
+        return super().reduce(operation, app_label) or True
 
     @property
     def migration_name_fragment(self) -> str:
