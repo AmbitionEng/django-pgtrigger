@@ -55,3 +55,15 @@ If you're ignoring triggers and handling database errors, there are two ways to 
 
 1. Wrap the outer transaction in `with pgtrigger.ignore.session():` so that the session is completed outside the transaction.
 2. Wrap the inner `try/except` in `with transaction.atomic():` so that the errored part of the transaction is rolled back before the [pgtrigger.ignore][] context manager ends.
+
+
+## Checking if a trigger is being ignored
+
+To check if a trigger is being ignored, use [pgtrigger.is_ignored][]:
+
+```python
+with ptrigger.ignore("app.Model:protect_inserts"):
+    pgtrigger.is_ignored("app.Model:protect_inserts")  # True
+
+pgtrigger.is_ignored("app.Model:protect_inserts")  # False
+```

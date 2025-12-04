@@ -60,6 +60,7 @@ Below are the core classes and functions of the `pgtrigger` module.
 
 :::pgtrigger.constraints
 :::pgtrigger.ignore
+:::pgtrigger.is_ignored
 :::pgtrigger.schema
 
 ## Registry

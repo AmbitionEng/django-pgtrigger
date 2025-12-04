@@ -210,6 +210,27 @@ def ignore(*uris: str, databases: Union[List[str], None] = None) -> Generator[No
 ignore.session = _ignore_session
 
 
+def is_ignored(uri: str) -> bool:
+    """
+    Check if a trigger URI is currently being ignored.
+
+    Args:
+        uri: The trigger URI to check.
+
+    Example:
+        Check if a trigger is being ignored:
+
+            with pgtrigger.ignore("my_app.Model:trigger_name"):
+                pgtrigger.is_ignored("my_app.Model:trigger_name")  # Returns True
+
+            pgtrigger.is_ignored("my_app.Model:trigger_name")  # Returns False
+    """
+    model, trigger = registry.registered(uri)[0]
+    pg_trigger_id = trigger.get_pgid(model)
+    ignored_pg_trigger_ids = getattr(_ignore, "value", set())
+    return pg_trigger_id in ignored_pg_trigger_ids
+
+
 def _inject_schema(execute, sql, params, many, context):
     """
     A connection execution wrapper that sets the schema
