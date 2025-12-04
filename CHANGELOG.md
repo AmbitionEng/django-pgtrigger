@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.17.0 (2025-12-04)
+
+#### Improvements
+
+  - Add `pgtrigger.is_ignored` to check if triggers are being ignored by [@dablak](https://github.com/dablak) in [#217](https://github.com/AmbitionEng/django-pgtrigger/pull/217).
+
 ## 4.16.0 (2025-11-30)
 
 #### Changes
