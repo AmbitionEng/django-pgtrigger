@@ -47,6 +47,7 @@ classifiers = [
   "Framework :: Django :: 5.1",
   "Framework :: Django :: 5.2",
   "Framework :: Django :: 6.0",
+  "Framework :: Django :: 6.1",
 ]
 license = "BSD-3-Clause"
 readme = "README.md"
